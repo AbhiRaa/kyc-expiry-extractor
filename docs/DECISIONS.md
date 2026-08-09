@@ -266,6 +266,25 @@ generated loader. `serverExternalPackages` did not help, because the failure hap
 graph. Assembling the specifier at runtime defeats the analysis and leaves Node to resolve
 it normally. A deployment-blocking bug that only surfaces on `next build`, never in tests.
 
+### Glare is not inferred from a page-level clipping ratio
+
+Found by POSTing real documents through the running API rather than by the eval, which
+scored decisions and never looked at the reason codes attached to them.
+
+`GLARE_OBSCURES_FIELD` was firing on **every document in the corpus**, including
+text-native PDFs, which cannot have flash glare because no camera was involved. The cause:
+a document is mostly white paper, so the whole-page clipping ratio sits around 0.93 on a
+perfectly clean scan — well past any threshold meant to catch glare.
+
+§11.2 #17 actually specifies detecting luminance clipping **in the extraction region**, and
+that distinction is load-bearing: glare is localized by nature, and a page-level average
+cannot see it. Detecting it properly needs a region-level metric that is not currently
+computed.
+
+The signal is therefore not emitted at all. A reason code that is always present carries no
+information and actively misleads a reviewer triaging a queue — worse than its absence.
+Blur and effective resolution are genuinely page-level properties and are unaffected.
+
 ## 6. Known limits
 
 - **HEIC decode is unproven by test.** sharp's bundled libheif ships no HEVC encoder, so a

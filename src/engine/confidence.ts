@@ -135,10 +135,20 @@ export function fuseConfidence(input: ConfidenceInput): ConfidenceResult {
     qualityPenalty += 0.1;
     reasonCodes.push('RESOLUTION_TOO_LOW');
   }
-  if (clip !== null && clip > 0.12) {
-    qualityPenalty += 0.1;
-    reasonCodes.push('GLARE_OBSCURES_FIELD');
-  }
+  // Glare is deliberately NOT inferred from the page-level clipping ratio.
+  //
+  // §11.2 #17 asks for luminance clipping "in the extraction region", and the distinction
+  // matters: a document is mostly white paper, so a whole-page clipping ratio sits around
+  // 0.93 for a perfectly clean scan. Thresholding that fired GLARE_OBSCURES_FIELD on every
+  // document in the corpus, including text-native PDFs, which cannot have flash glare at
+  // all because no camera was involved. A reason code that is always present carries no
+  // information and actively misleads a reviewer triaging a REVIEW queue.
+  //
+  // Glare is localized by nature, so detecting it needs a region-level metric we do not
+  // currently compute. Rather than emit a signal we cannot stand behind, we emit none —
+  // see "Known limits" in docs/DECISIONS.md. Blur and resolution below are genuinely
+  // page-level properties and are unaffected.
+  void clip;
   if (qualityPenalty > 0) {
     // Deterministic tiers already proved they read the bytes correctly, so quality
     // matters far less to them than to the OCR and VLM paths.

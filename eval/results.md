@@ -26,10 +26,10 @@ Coverage did not reach 80.0% at any confidence threshold. The curve below shows 
 | 0.50 | 72.0% | 77.8% | 4 |
 | 0.60 | 72.0% | 77.8% | 4 |
 | 0.70 | 72.0% | 77.8% | 4 |
-| 0.75 | 68.0% | 82.4% | 3 |
-| 0.80 | 68.0% | 82.4% | 3 |
-| 0.85 | 44.0% | 90.9% | 1 |
-| 0.90 | 44.0% | 90.9% | 1 |
+| 0.75 | 72.0% | 77.8% | 4 |
+| 0.80 | 72.0% | 77.8% | 4 |
+| 0.85 | 68.0% | 82.4% | 3 |
+| 0.90 | 68.0% | 82.4% | 3 |
 | 0.95 | 28.0% | 100.0% | 0 |
 | 0.99 | 28.0% | 100.0% | 0 |
 
@@ -40,12 +40,12 @@ as round numbers (§9).
 
 | Tier | Documents | Share | Mean latency | Mean cost |
 |---|---|---|---|---|
-| NONE | 10 | 40.0% | 307 ms | $0.0000 |
-| TB_OCR | 8 | 32.0% | 600 ms | $0.0000 |
-| TA_PDF417 | 4 | 16.0% | 9 ms | $0.0000 |
-| TA_MRZ | 3 | 12.0% | 581 ms | $0.0000 |
+| NONE | 10 | 40.0% | 323 ms | $0.0000 |
+| TB_OCR | 8 | 32.0% | 613 ms | $0.0000 |
+| TA_PDF417 | 4 | 16.0% | 10 ms | $0.0000 |
+| TA_MRZ | 3 | 12.0% | 590 ms | $0.0000 |
 
-Mean latency across all documents: **386 ms**.
+Mean latency across all documents: **398 ms**.
 Total spend for the whole corpus: **$0.0000**.
 
 ## Routing
@@ -64,19 +64,19 @@ Total spend for the whole corpus: **$0.0000**.
 | `02_dl_tx_back_pdf417.png` | 2030-03-22 | 2030-03-22 | AUTO_PASS | 1.00 | TA_PDF417 | OK |
 | `03_dl_ny_both_sides.png` | 2028-06-30 | 2028-06-30 | AUTO_PASS | 1.00 | TA_PDF417 | OK |
 | `04_dl_fl_vertical_under21.png` | 2028-05-02 | 2028-05-02 | AUTO_PASS | 1.00 | TA_PDF417 | OK |
-| `05_dl_wa_temporary_paper.png` | 2026-09-18 | 2026-09-18 | REVIEW | 0.70 | TB_OCR | MISS — basis UNDETERMINED != EXPIRY_DATE; verdict INDETERMINATE != VALID |
+| `05_dl_wa_temporary_paper.png` | 2026-09-18 | 2026-09-18 | REVIEW | 0.80 | TB_OCR | MISS — basis UNDETERMINED != EXPIRY_DATE; verdict INDETERMINATE != VALID |
 | `06_dl_on_canada_ccyymmdd.png` | 2029-02-28 | 2029-02-28 | AUTO_PASS | 1.00 | TA_PDF417 | OK |
 | `07_passport_usa.png` | 2031-04-17 | 2031-04-17 | AUTO_PASS | 1.00 | TA_MRZ | OK |
 | `08_passport_gbr.png` | 2033-01-05 | 2033-01-05 | AUTO_PASS | 1.00 | TA_MRZ | OK |
-| `09_residence_permit_td1_deu.png` | 2029-10-31 | 2029-10-31 | REVIEW | 0.80 | TB_OCR | MISS — basis UNDETERMINED != EXPIRY_DATE; verdict INDETERMINATE != VALID |
+| `09_residence_permit_td1_deu.png` | 2029-10-31 | 2029-10-31 | REVIEW | 0.90 | TB_OCR | MISS — basis UNDETERMINED != EXPIRY_DATE; verdict INDETERMINATE != VALID |
 | `10_passport_usa_expired.png` | 2023-06-30 | 2023-06-30 | AUTO_FAIL | 1.00 | TA_MRZ | OK |
-| `11_insurance_coverage_end.png` | 2026-12-31 | 2026-12-31 | REVIEW | 0.80 | TB_OCR | OK |
+| `11_insurance_coverage_end.png` | 2026-12-31 | 2026-12-31 | REVIEW | 0.90 | TB_OCR | OK |
 | `12_insurance_date_range.png` | 2028-01-31 | (none, COVERAGE_END) | REVIEW | 0.00 | NONE | MISS — date null != 2028-01-31; verdict INDETERMINATE != VALID |
 | `13_insurance_no_expiry.png` | (none, NO_EXPIRY) | (none, COVERAGE_END) | REVIEW | 0.00 | NONE | MISS — expected no date under NO_EXPIRY, got null under COVERAGE_END |
-| `14_bank_statement_recent.pdf` | 2026-07-31 | 2026-07-31 | REVIEW | 0.80 | TB_OCR | OK |
-| `15_bank_statement_stale.pdf` | 2025-08-31 | 2025-08-31 | REVIEW | 0.80 | TB_OCR | OK |
-| `16_bank_statement_40pages.pdf` | 2026-06-30 | 2026-06-30 | REVIEW | 0.80 | TB_OCR | OK |
-| `17_utility_bill_recent.pdf` | 2026-07-15 | 2026-07-14 | REVIEW | 0.80 | TB_OCR | MISS — date 2026-07-14 != 2026-07-15 |
+| `14_bank_statement_recent.pdf` | 2026-07-31 | 2026-07-31 | REVIEW | 0.90 | TB_OCR | OK |
+| `15_bank_statement_stale.pdf` | 2025-08-31 | 2025-08-31 | REVIEW | 0.90 | TB_OCR | OK |
+| `16_bank_statement_40pages.pdf` | 2026-06-30 | 2026-06-30 | REVIEW | 0.90 | TB_OCR | OK |
+| `17_utility_bill_recent.pdf` | 2026-07-15 | 2026-07-14 | REVIEW | 0.90 | TB_OCR | MISS — date 2026-07-14 != 2026-07-15 |
 | `18_utility_bill_stale.pdf` | 2026-01-20 | (none, RECENCY_WINDOW) | REVIEW | 0.00 | NONE | MISS — date null != 2026-01-20; verdict INDETERMINATE != EXPIRED |
 | `19_employment_letter_many_dates.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | AUTO_PASS | 0.92 | NONE | OK |
 | `20_employment_letter_non_expiring.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | AUTO_PASS | 0.92 | NONE | OK |
