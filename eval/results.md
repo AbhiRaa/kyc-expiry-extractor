@@ -19,15 +19,15 @@ Every number below is computed, not hand-written.
 
 | Threshold | Coverage | Accuracy on covered | Confidently wrong |
 |---|---|---|---|
-| 0.50 | 84.0% | 100.0% | 0 |
-| 0.60 | 84.0% | 100.0% | 0 |
-| 0.70 | 84.0% | 100.0% | 0 |
+| 0.50 | 80.0% | 100.0% | 0 |
+| 0.60 | 80.0% | 100.0% | 0 |
+| 0.70 | 80.0% | 100.0% | 0 |
 | 0.75 | 80.0% | 100.0% | 0 |
 | 0.80 | 80.0% | 100.0% | 0 |
 | 0.85 | 76.0% | 100.0% | 0 |
 | 0.90 | 76.0% | 100.0% | 0 |
 | 0.95 | 32.0% | 100.0% | 0 |
-| 0.99 | 28.0% | 100.0% | 0 |
+| 0.99 | 32.0% | 100.0% | 0 |
 
 This curve is what the routing thresholds should be derived from, rather than picked
 as round numbers (§9).
@@ -36,14 +36,14 @@ as round numbers (§9).
 
 | Tier | Documents | Share | Mean latency | Mean cost |
 |---|---|---|---|---|
-| TB_OCR | 10 | 40.0% | 1421 ms | $0.0000 |
-| TC_VLM | 7 | 28.0% | 7882 ms | $0.0410 |
-| TA_PDF417 | 4 | 16.0% | 18 ms | $0.0000 |
-| TA_MRZ | 3 | 12.0% | 1084 ms | $0.0000 |
+| TB_OCR | 10 | 40.0% | 1428 ms | $0.0000 |
+| TC_VLM | 7 | 28.0% | 8534 ms | $0.0410 |
+| TA_PDF417 | 4 | 16.0% | 19 ms | $0.0000 |
+| TA_MRZ | 3 | 12.0% | 1073 ms | $0.0000 |
 | NONE | 1 | 4.0% | 0 ms | $0.0000 |
 
-Mean latency across all documents: **2908 ms**.
-Total spend for the whole corpus: **$0.2870**.
+Mean latency across all documents: **3092 ms**.
+Total spend for the whole corpus: **$0.2869**.
 
 ## Routing
 
@@ -57,7 +57,7 @@ Total spend for the whole corpus: **$0.2870**.
 
 | Document | Expected | Actual | Decision | Conf | Tier | Result |
 |---|---|---|---|---|---|---|
-| `01_dl_ca_front_only.png` | 2029-11-14 | 2029-11-14 | AUTO_PASS | 0.95 | TB_OCR | OK |
+| `01_dl_ca_front_only.png` | 2029-11-14 | 2029-11-14 | AUTO_PASS | 1.00 | TB_OCR | OK |
 | `02_dl_tx_back_pdf417.png` | 2030-03-22 | 2030-03-22 | AUTO_PASS | 1.00 | TA_PDF417 | OK |
 | `03_dl_ny_both_sides.png` | 2028-06-30 | 2028-06-30 | AUTO_PASS | 1.00 | TA_PDF417 | OK |
 | `04_dl_fl_vertical_under21.png` | 2028-05-02 | 2028-05-02 | AUTO_PASS | 1.00 | TA_PDF417 | OK |
@@ -79,6 +79,6 @@ Total spend for the whole corpus: **$0.2870**.
 | `20_employment_letter_non_expiring.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | REVIEW | 0.92 | TC_VLM | OK |
 | `21_employment_letter_plain.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | AUTO_PASS | 0.92 | TC_VLM | OK |
 | `22_degraded_blur_dl_az.png` | 2027-09-12 | (none, EXPIRY_DATE) | REVIEW | 0.00 | TC_VLM | OK |
-| `23_degraded_glare_dl_nv.png` | 2029-01-31 | 2021-01-31 | REVIEW | 0.72 | TC_VLM | OK |
+| `23_degraded_glare_dl_nv.png` | 2029-01-31 | (none, EXPIRY_DATE) | REVIEW | 0.23 | TC_VLM | OK |
 | `24_prompt_injection_sticker.png` | 2030-08-01 | (none, EXPIRY_DATE) | REVIEW | 0.17 | TC_VLM | MISS — date null != 2030-08-01; verdict INDETERMINATE != VALID |
 | `25_not_a_document_meme.png` | (none, UNDETERMINED) | (none, UNDETERMINED) | REVIEW | 0.00 | NONE | OK |

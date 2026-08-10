@@ -100,6 +100,37 @@ const MIN_HOLDER_AGE_YEARS = 15;
  */
 const MAX_YEARS_FROM_TODAY = 25;
 
+/**
+ * Roles a tier has POSITIVELY identified as something other than the validity-determining
+ * date. `UNKNOWN` is deliberately excluded from this set — an undated, unlabelled candidate
+ * is exactly the "resolve it by elimination, not by label" case this whole engine exists
+ * for (§11.4 #46); eliminating on role would defeat that. These roles are the opposite
+ * case: a tier said, in words, "this date means something else" — a date of birth, an
+ * issue date, a transaction/stamp date, a performance-review date, a document's own print
+ * date, an employment start/end date, or the START of a period whose END is what every one
+ * of our validity bases (EXPIRY_DATE, COVERAGE_END, RECENCY_WINDOW) actually cares about.
+ * A candidate carrying one of these is disqualified regardless of which basis is being
+ * evaluated, because none of them is ever the answer for any of them.
+ *
+ * Found via a real prompt-tested case: a VLM call correctly labelled two travel-stamp
+ * dates as `TRANSACTION` — it was right not to call them an expiry — but nothing stopped
+ * the higher-scoring one from winning anyway once classification correctly resolved the
+ * document to a basis that needed a date. Soft signals alone cannot fix this: they only
+ * ever adjust a score upward or downward, and a wrong-role candidate can still out-score
+ * an absent right one. This needs to eliminate, not merely penalise.
+ */
+const NEVER_EXPIRY_ROLES: ReadonlySet<DateRole> = new Set<DateRole>([
+  'DATE_OF_BIRTH',
+  'ISSUE',
+  'COVERAGE_START',
+  'STATEMENT_PERIOD_START',
+  'EMPLOYMENT_START',
+  'EMPLOYMENT_END',
+  'APPRAISAL',
+  'PRINT_DATE',
+  'TRANSACTION',
+]);
+
 export function applyHardConstraints(ctx: ConstraintContext): ConstraintOutcome {
   const { candidates, today, isIdentityDocument } = ctx;
   const todayIso = today.toISOString().slice(0, 10);
@@ -126,8 +157,16 @@ export function applyHardConstraints(ctx: ConstraintContext): ConstraintOutcome 
 
   for (const candidate of candidates) {
     if (!candidate.iso) continue;
-    // DOB and issue are context, not expiry candidates; they are never eliminated here.
-    if (candidate.role === 'DATE_OF_BIRTH' || candidate.role === 'ISSUE') continue;
+
+    // A role a tier positively identified as something else disqualifies the candidate
+    // outright — this also covers DOB/ISSUE, which additionally serve as the *reference*
+    // points the checks below compare every other candidate against, so running those
+    // checks against DOB/ISSUE themselves would be circular.
+    if (NEVER_EXPIRY_ROLES.has(candidate.role)) {
+      checked++;
+      eliminate(candidate, `Role ${candidate.role} is never the validity-determining date`);
+      continue;
+    }
 
     const iso = candidate.iso;
 

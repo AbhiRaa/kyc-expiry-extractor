@@ -100,6 +100,45 @@ describe('unlabelled expiry is resolved by elimination, not by label matching', 
     expect(outcome.survivors[0].iso).toBe('2030-04-23');
     expect(outcome.survivors[0].signals.join(' ')).toMatch(/birthday-aligned/);
   });
+
+  it('does not let a positively-non-expiry role win by default when no real expiry survives', () => {
+    // A real case, not synthetic: a passport photographed with travel stamps. TC correctly
+    // labelled both stamp dates TRANSACTION -- it was right that neither is the expiry --
+    // but on the call that mattered, it did not report an EXPIRY-role candidate at all.
+    // Before role elimination, whichever TRANSACTION date scored highest on other soft
+    // signals won anyway, and the system reported it as an EXPIRED verdict: a wrong,
+    // confidently-labelled answer, worse than an honest "could not determine".
+    const outcome = runConstraintEngine({
+      today: TODAY,
+      isIdentityDocument: true,
+      candidates: [
+        makeCandidate({ iso: '2024-02-17', role: 'TRANSACTION', confidence: 0.5 }),
+        makeCandidate({ iso: '2023-02-24', role: 'TRANSACTION', confidence: 0.5 }),
+      ],
+    });
+
+    expect(outcome.survivors).toHaveLength(0);
+    expect(outcome.eliminated).toHaveLength(2);
+    for (const c of outcome.eliminated) {
+      expect(c.eliminatedBy).toMatch(/TRANSACTION is never the validity-determining date/);
+    }
+  });
+
+  it('still resolves an unlabelled expiry when a TRANSACTION-role decoy is also present', () => {
+    // Elimination on role must not become so aggressive that it discards the genuine
+    // candidate sitting right next to the decoy -- the UNKNOWN-role date is exactly the
+    // "found it without a label" case this engine exists for (§11.4 #46).
+    const outcome = runConstraintEngine({
+      today: TODAY,
+      isIdentityDocument: true,
+      candidates: [
+        makeCandidate({ iso: '2023-02-24', role: 'TRANSACTION' }),
+        makeCandidate({ iso: '2032-07-06', role: 'UNKNOWN' }),
+      ],
+    });
+
+    expect(outcome.survivors.map((c) => c.iso)).toEqual(['2032-07-06']);
+  });
 });
 
 // ---------------------------------------------------------------------------
