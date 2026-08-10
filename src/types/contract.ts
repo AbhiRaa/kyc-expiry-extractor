@@ -274,6 +274,15 @@ export interface TierResult {
   checksum_validated: boolean | null;
   checksum_detail: string | null;
   issuer: string | null;
+  /**
+   * TC's own document-type read (Mapper's `document_type`), independent of whatever
+   * `documentClass` it was told going in. §7.6's design already intended this: classify
+   * cheaply first, escalate to the VLM only when `inconclusive`, and let the VLM's own
+   * read settle it — `ClassificationResult.hypotheses` exists specifically to narrow what
+   * the VLM is asked. Exposed here so the router can act on it when the initial pass
+   * could not name a class at all.
+   */
+  mapper_document_class?: DocumentClass | null;
   /** Raw OCR token stream, used to ground VLM output against what is actually on the page (G5). */
   grounding_tokens?: string[];
   cost_usd: number;

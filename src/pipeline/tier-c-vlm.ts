@@ -407,6 +407,9 @@ function merge(input: MergeInput): TierResult {
     checksum_validated: null,
     checksum_detail: null,
     issuer,
+    // Present regardless of whether either call found any dates -- classification can be
+    // inconclusive on a document that genuinely has no dates on it too.
+    mapper_document_class: mapperValue?.document_type ?? null,
     cost_usd: spend.usd,
     duration_ms: durationMs,
   };

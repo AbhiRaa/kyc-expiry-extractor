@@ -77,6 +77,15 @@ function logTierFailure(tier: string, error: unknown): null {
   return null;
 }
 
+/**
+ * Confidence assigned when TC's own document-type read settles a classification the cheap
+ * pass called `inconclusive` (§7.6). Below classify.ts's confident-match range (~0.6-0.97)
+ * since it is a single, uncross-checked VLM read of the class itself — but well above the
+ * 0.25 "gave up" floor `classifyDocument` reports for `OTHER_DOCUMENT`, since a real read
+ * of the actual pixels is real evidence, not a guess.
+ */
+const TC_CLASSIFICATION_CONFIDENCE = 0.7;
+
 /** Document classes that are identity documents, for the DOB-earliest constraint. */
 const IDENTITY_CLASSES: ReadonlySet<DocumentClass> = new Set<DocumentClass>([
   'US_DRIVERS_LICENSE',
@@ -204,7 +213,9 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
     textProvenance: page.textLayer ? 'EXACT' : 'OCR',
     quality: page.quality,
   });
-  const documentClass = classification.class;
+  // Reconsidered below, once TC has run, if classification could not name a class at all.
+  let documentClass = classification.class;
+  let classConfidence = classification.confidence;
   reasonCodes.push(...classification.reasonCodes);
 
   // --- Cross-check machine-readable against printed (§7) -------------------
@@ -254,6 +265,17 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
     reasonCodes.push('MODEL_UNAVAILABLE');
   } else if (needVlm) {
     reasonCodes.push('TIMEOUT');
+  }
+
+  // --- Reconsider classification with TC's own read, if the cheap pass gave up --------
+  // §7.6's own design already intended this: classify cheaply and honestly first, escalate
+  // to the VLM only when `inconclusive`, and let its own read settle it once it has
+  // actually looked at the page. Gated on `inconclusive` specifically, not a confidence
+  // threshold, so a classification that succeeded with merely moderate confidence is never
+  // silently overridden by a single, uncross-checked VLM read of the class itself.
+  if (classification.inconclusive && tcResult?.mapper_document_class) {
+    documentClass = tcResult.mapper_document_class;
+    classConfidence = TC_CLASSIFICATION_CONFIDENCE;
   }
 
   // --- Tier results, ordered by SOURCE AUTHORITY, not execution order ------
@@ -352,7 +374,7 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
     request_id: requestId,
     document: {
       class: documentClass,
-      class_confidence: classification.confidence,
+      class_confidence: classConfidence,
       issuer: classification.issuer ?? winningTierResult?.issuer ?? null,
       pages: doc.pages.length,
       side: classification.side,
