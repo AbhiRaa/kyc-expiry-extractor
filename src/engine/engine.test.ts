@@ -188,6 +188,25 @@ describe('class-specific validity rules', () => {
     expect(validity.date).toBeNull();
   });
 
+  it('an UNDETERMINED basis nulls the date even when a candidate survived', () => {
+    // A real-world case, not a synthetic one: classification failed to identify the
+    // document class at all (basis defaults to UNDETERMINED), but the constraint engine
+    // still had a winning candidate from some tier — e.g. a passport whose class detection
+    // failed, where the surviving "winner" was a travel-stamp date, not the printed expiry.
+    // Presenting that date next to "could not establish which validity rule applies" reads
+    // as a found expiry; it must be suppressed exactly like NO_EXPIRY suppresses one.
+    const validity = evaluateValidity({
+      documentClass: 'OTHER_DOCUMENT',
+      dateIso: '2024-02-17',
+      dateRaw: '17 FEB 2024',
+      today: TODAY,
+    });
+    expect(validity.basis).toBe('UNDETERMINED');
+    expect(validity.verdict).toBe('INDETERMINATE');
+    expect(validity.date).toBeNull();
+    expect(validity.date_raw).toBeNull();
+  });
+
   it('an explicit NON-EXPIRING label is believed', () => {
     expect(hasExplicitNonExpiringLabel('VALID: NON-EXPIRING')).toBe(true);
     expect(hasExplicitNonExpiringLabel('EXPIRES 04/2030')).toBe(false);

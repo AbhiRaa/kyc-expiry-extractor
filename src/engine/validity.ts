@@ -123,7 +123,14 @@ export function evaluateValidity(input: ValidityInput): ValidityInfo {
 
     case 'UNDETERMINED':
     default:
+      // Same reasoning as NO_EXPIRY, and arguably stronger: if we could not even establish
+      // which rule applies, we categorically cannot say any specific date is the meaningful
+      // one. Leaking whatever candidate happened to survive the constraint engine — even a
+      // TRANSACTION-role date with no business being called "the date" — next to
+      // "could not establish which validity rule applies" reads as a found expiry.
       verdict = 'INDETERMINATE';
+      returnedDate = null;
+      returnedDateRaw = null;
       break;
   }
 
