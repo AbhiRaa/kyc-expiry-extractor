@@ -176,7 +176,10 @@ describe('normalizeUsage', () => {
 describe('AnthropicVlmClient request shape', () => {
   it('sends the exact model id, structured-output schema and low effort', async () => {
     const { sdk, create } = stubSdk({ content: [{ type: 'text', text: '{}' }] });
-    await new AnthropicVlmClient({ anthropic: sdk }).complete({
+    // Pinned explicitly rather than relying on the ambient default (VLM_MODEL, itself
+    // overridable via ANTHROPIC_VLM_MODEL) -- this test is about whether the configured
+    // model reaches the request, not about which model is currently the default.
+    await new AnthropicVlmClient({ anthropic: sdk, model: 'claude-opus-5' }).complete({
       prompt: HUNTER_PROMPT,
       schema: HUNTER_JSON_SCHEMA,
       image: IMAGE,
@@ -242,7 +245,12 @@ describe('AnthropicVlmClient request shape', () => {
 
 describe('AnthropicVlmClient response handling', () => {
   it('concatenates text blocks and computes cost from real usage', async () => {
+    // Model pinned in both the stub's echoed response and the client construction: cost
+    // pricing keys off whichever model the response reports (falling back to the client's
+    // own configured model only if the response omits one), so a test asserting an exact
+    // dollar figure has to pin both rather than depend on the ambient default.
     const { sdk } = stubSdk({
+      model: 'claude-opus-5',
       content: [
         { type: 'text', text: '{"expiry_raw":' },
         { type: 'text', text: '"2028-03-15"}' },
@@ -255,7 +263,7 @@ describe('AnthropicVlmClient response handling', () => {
       },
     });
 
-    const res = await new AnthropicVlmClient({ anthropic: sdk }).complete({
+    const res = await new AnthropicVlmClient({ anthropic: sdk, model: 'claude-opus-5' }).complete({
       prompt: HUNTER_PROMPT,
       schema: HUNTER_JSON_SCHEMA,
       image: IMAGE,

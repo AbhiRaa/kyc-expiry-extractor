@@ -42,14 +42,16 @@ import Anthropic, {
 // ---------------------------------------------------------------------------
 
 /**
- * Exact model id — no date suffix. Overridable via `ANTHROPIC_VLM_MODEL` so the model
- * comparison (accuracy-at-coverage AND cost, side by side) is a rerun, not a code change —
- * `ANTHROPIC_VLM_MODEL=claude-sonnet-5 npm run eval`. TC is deliberately the last-resort
- * tier and stays cheap in absolute terms either way (it only ever runs on the ~25-30% of
- * documents the deterministic/OCR tiers already gave up on), so the honest way to answer
- * "is a cheaper model worth it" is to measure it on this corpus rather than assume.
+ * Exact model id — no date suffix. Default switched from claude-opus-5 to claude-sonnet-5
+ * after measuring both on this corpus, not by assumption: identical 96.0% overall accuracy,
+ * zero confidently-wrong outcomes on either model (including the prompt-injection case), at
+ * 42% lower total spend and faster mean TC latency for Sonnet. See the README's "Comparing
+ * VLM models" section for the full numbers and how to reproduce them.
+ *
+ * Overridable via `ANTHROPIC_VLM_MODEL` — `ANTHROPIC_VLM_MODEL=claude-opus-5 npm run eval`
+ * reproduces the previous default for comparison.
  */
-export const VLM_MODEL = process.env.ANTHROPIC_VLM_MODEL ?? 'claude-opus-5';
+export const VLM_MODEL = process.env.ANTHROPIC_VLM_MODEL ?? 'claude-sonnet-5';
 
 /**
  * Both schemas are small (Hunter is four scalar fields; Mapper is a short array of them),

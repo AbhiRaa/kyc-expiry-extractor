@@ -5,15 +5,15 @@ Every number below is computed, not hand-written.
 
 ## Headline
 
-**80.0% of documents clear with zero human touch, at 100.0% accuracy on those, at $0.0115 per document.**
+**80.0% of documents clear with zero human touch, at 100.0% accuracy on those, at $0.0067 per document.**
 
 - Documents: **25**
 - Overall accuracy (all documents, abstentions count as unanswered): **96.0%**
-- Answered (AUTO_PASS or AUTO_FAIL): **9** — coverage 36.0%
+- Answered (AUTO_PASS or AUTO_FAIL): **10** — coverage 40.0%
 - Accuracy on answered: **100.0%**
-- Abstained to REVIEW: **16** — abstention rate 64.0%
+- Abstained to REVIEW: **15** — abstention rate 60.0%
 - **Confident and wrong: 0** ← the only truly bad outcome
-- Confident and right: 9
+- Confident and right: 10
 
 ## Accuracy at coverage
 
@@ -36,21 +36,21 @@ as round numbers (§9).
 
 | Tier | Documents | Share | Mean latency | Mean cost |
 |---|---|---|---|---|
-| TB_OCR | 10 | 40.0% | 1428 ms | $0.0000 |
-| TC_VLM | 7 | 28.0% | 8534 ms | $0.0410 |
+| TB_OCR | 10 | 40.0% | 1442 ms | $0.0000 |
+| TC_VLM | 6 | 24.0% | 6778 ms | $0.0258 |
 | TA_PDF417 | 4 | 16.0% | 19 ms | $0.0000 |
-| TA_MRZ | 3 | 12.0% | 1073 ms | $0.0000 |
-| NONE | 1 | 4.0% | 0 ms | $0.0000 |
+| TA_MRZ | 3 | 12.0% | 1092 ms | $0.0000 |
+| NONE | 2 | 8.0% | 2132 ms | $0.0059 |
 
-Mean latency across all documents: **3092 ms**.
-Total spend for the whole corpus: **$0.2869**.
+Mean latency across all documents: **2508 ms**.
+Total spend for the whole corpus: **$0.1667**.
 
 ## Routing
 
 | Decision | Count | Share |
 |---|---|---|
-| AUTO_PASS | 8 | 32.0% |
-| REVIEW | 16 | 64.0% |
+| AUTO_PASS | 9 | 36.0% |
+| REVIEW | 15 | 60.0% |
 | AUTO_FAIL | 1 | 4.0% |
 
 ## Per-document
@@ -76,9 +76,9 @@ Total spend for the whole corpus: **$0.2869**.
 | `17_utility_bill_recent.pdf` | 2026-07-15 | 2026-07-15 | REVIEW | 0.90 | TB_OCR | OK |
 | `18_utility_bill_stale.pdf` | 2026-01-20 | 2026-01-20 | REVIEW | 0.90 | TB_OCR | OK |
 | `19_employment_letter_many_dates.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | REVIEW | 0.92 | TC_VLM | OK |
-| `20_employment_letter_non_expiring.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | REVIEW | 0.92 | TC_VLM | OK |
+| `20_employment_letter_non_expiring.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | AUTO_PASS | 0.92 | TC_VLM | OK |
 | `21_employment_letter_plain.pdf` | (none, NO_EXPIRY) | (none, NO_EXPIRY) | AUTO_PASS | 0.92 | TC_VLM | OK |
-| `22_degraded_blur_dl_az.png` | 2027-09-12 | (none, EXPIRY_DATE) | REVIEW | 0.00 | TC_VLM | OK |
+| `22_degraded_blur_dl_az.png` | 2027-09-12 | (none, EXPIRY_DATE) | REVIEW | 0.00 | NONE | OK |
 | `23_degraded_glare_dl_nv.png` | 2029-01-31 | (none, EXPIRY_DATE) | REVIEW | 0.23 | TC_VLM | OK |
-| `24_prompt_injection_sticker.png` | 2030-08-01 | (none, EXPIRY_DATE) | REVIEW | 0.17 | TC_VLM | MISS — date null != 2030-08-01; verdict INDETERMINATE != VALID |
+| `24_prompt_injection_sticker.png` | 2030-08-01 | (none, EXPIRY_DATE) | REVIEW | 0.15 | TC_VLM | MISS — date null != 2030-08-01; verdict INDETERMINATE != VALID |
 | `25_not_a_document_meme.png` | (none, UNDETERMINED) | (none, UNDETERMINED) | REVIEW | 0.00 | NONE | OK |

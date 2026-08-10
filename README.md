@@ -4,10 +4,11 @@ Upload a KYC document, get back a **verdict** — not a date.
 
 > **Headline:** the deterministic + OCR tiers alone — no API key, **$0 cost** — clear **44%
 > of documents with zero human touch at 100% accuracy on those**, and **zero confident
-> errors** across the whole corpus. Turning on the paid VLM tier doesn't mechanically add
-> coverage on top of that (see [Results](#results) for why); its payoff is on the 8
-> documents the deterministic tiers have no information about at all, at **$0.0088 per
-> document** averaged across the full corpus. Reproduce either with `npm run eval`.
+> errors** across the whole corpus. Turning on the paid VLM tier (`claude-sonnet-5` by
+> default) doesn't mechanically add coverage on top of that (see [Results](#results) for
+> why); its payoff is on the 8 documents the deterministic tiers have no information about
+> at all, at **$0.0067 per document** averaged across the full corpus. Reproduce either
+> with `npm run eval`.
 
 ---
 
@@ -148,47 +149,51 @@ pinned anchor date 2026-08-09, not hand-written. Full detail in
 
 ### Deterministic-only vs full pipeline
 
-| | Deterministic + OCR only (no key) | Full pipeline (TC enabled) |
+| | Deterministic + OCR only (no key) | Full pipeline (TC enabled, `claude-sonnet-5`) |
 |---|---|---|
 | Answered (`AUTO_PASS` / `AUTO_FAIL`) | 11 — **coverage 44.0%** | 10 — **coverage 40.0%** |
 | Accuracy on answered | 100.0% | 100.0% |
 | Overall accuracy (abstentions unanswered) | 96.0% | 96.0% |
 | Abstained to `REVIEW` | 14 — 56.0% | 15 — 60.0% |
 | Confident and wrong | **0** | **0** |
-| Cost for the entire corpus | **$0.0000** | $0.2188 ($0.0088/doc) |
-| Mean latency | 588 ms | 3314 ms |
+| Cost for the entire corpus | **$0.0000** | $0.1667 ($0.0067/doc) |
+| Mean latency | 950 ms | 2508 ms |
 
 Turning TC on does **not** mechanically buy more coverage on this corpus — it actually
 costs one document's worth. Without a key, an `EMPLOYMENT_LETTER` with no dates found at
 all short-circuits straight to `NOT_APPLICABLE` / `AUTO_PASS`, because there is nothing to
 be wrong about. With TC on, the model actually reads the page, and on
-`20_employment_letter_non_expiring.pdf` that read is cautious enough to route to `REVIEW`
-at the same 0.92 confidence instead of auto-clearing — a fast path that never looked is not
-more correct than a slower path that did, just less honest about it.
+`19_employment_letter_many_dates.pdf` — 15 dates, the showcase abstention case — that read
+is cautious enough to route to `REVIEW` at the same 0.92 confidence instead of auto-clearing.
+A fast path that never looked is not more correct than a slower path that did, just less
+honest about it; which specific document trades places this way is itself model-dependent
+(it was `20_employment_letter_non_expiring.pdf` under the previous default, `claude-opus-5`
+— see "Comparing VLM models" below), not a fixed property of turning TC on at all.
 
 TC's real payoff is on the 8 documents deterministic tiers have zero information about:
 without a key they all abstain as `NONE` at confidence 0.00. With TC on, six of them (`13`,
-`20`, `21`, `22`, `23`, `24`) get an actual grounded read instead of a blind abstention — the
-other two (`19`, `25`) correctly resolve without needing one at all, since neither has a
-date that matters. On `24` — the prompt-injection sticker — TC plus the constraint engine's
-new plausibility ceiling (below) is what stops a fabricated `2099-01-01` from ever reaching
-the answer, something the deterministic tiers structurally cannot do since they never look
-at the page pixels at all.
+`19`, `20`, `21`, `23`, `24`) get an actual grounded read instead of a blind abstention — the
+other two (`22`, `25`) still resolve as `NONE` on this run (a degraded-image case and the
+not-a-document case; TC's own dispatch didn't reach `22` this time, which the "confidently
+wrong" count of zero shows didn't cost it anything). On `24` — the prompt-injection sticker
+— TC plus the constraint engine's plausibility ceiling and role elimination (below) is what
+stops a fabricated date from ever reaching the answer, something the deterministic tiers
+structurally cannot do since they never look at the page pixels at all.
 
 ### Tier hit distribution — the cost story (full pipeline)
 
 | Tier | Documents | Share | Mean latency | Mean cost |
 |---|---|---|---|---|
-| TB_OCR | 10 | 40.0% | 1059 ms | $0.0000 |
-| TC_VLM | 6 | 24.0% | 7327 ms | $0.0332 |
+| TB_OCR | 10 | 40.0% | 1442 ms | $0.0000 |
+| TC_VLM | 6 | 24.0% | 6778 ms | $0.0258 |
 | TA_PDF417 | 4 | 16.0% | **19 ms** | $0.0000 |
-| TA_MRZ | 3 | 12.0% | 1074 ms | $0.0000 |
-| NONE | 2 | 8.0% | 12502 ms | $0.0096 |
+| TA_MRZ | 3 | 12.0% | 1092 ms | $0.0000 |
+| NONE | 2 | 8.0% | 2132 ms | $0.0059 |
 
 4 of the 10 auto-cleared documents resolved on a machine-readable barcode region in
 single- or double-digit milliseconds at zero marginal cost (`TA_PDF417`); another 3 decoded
 a checksummed MRZ in about a second, also free. TC is the expensive tail — 6 documents, 24%
-of the corpus, carrying essentially all of the $0.2188 total spend.
+of the corpus, carrying essentially all of the $0.1667 total spend.
 
 ### Deriving the thresholds from the curve
 
@@ -196,7 +201,7 @@ The build shipped 0.90 / 0.70 as placeholders. The measured curve (full pipeline
 
 | Threshold | Coverage | Accuracy on covered | Confidently wrong |
 |---|---|---|---|
-| 0.70 | 84.0% | 100.0% | 0 |
+| 0.70 | 80.0% | 100.0% | 0 |
 | 0.80 | 80.0% | 100.0% | 0 |
 | 0.90 | 76.0% | 100.0% | 0 |
 | **0.95** | 32.0% | **100.0%** | **0** |
@@ -211,15 +216,15 @@ distinguishes them.
 **What separates 0.95 is usually provenance, but not a hard rule.** 7 of the 8 documents
 that clear 0.95 do so on a self-validating source (MRZ with passing check digits, PDF417
 with intact Reed-Solomon ECC). The 8th (`01_dl_ca_front_only.png`) clears it on `TB_OCR`
-alone — full OCR grounding, an unambiguous single surviving candidate, and a strong soft-
-signal score are enough to earn 0.95 without a checksum behind it. So 0.95 is *close* to a
-tier boundary in this corpus, not an absolute one: nothing stops a sufficiently
-well-corroborated OCR read from crossing it, and one already has. Whether the threshold
-should instead sit at 0.80 — which clears with zero confidently-wrong outcomes at 80.0%
-coverage, double today's 40.0% headline — is a real question the curve raises rather than
-settles: it turns on how much weight "no checksum behind the read" should carry by itself,
-independent of measured accuracy on this corpus. That is a policy call, not one this README
-makes unilaterally.
+alone, at confidence **1.00** on this run — full OCR grounding, an unambiguous single
+surviving candidate, and a strong soft-signal score are enough to reach the same ceiling a
+checksummed read gets, without a checksum behind it. So 0.95 is *close* to a tier boundary
+in this corpus, not an absolute one: nothing stops a sufficiently well-corroborated OCR
+read from crossing it, and one already has. Whether the threshold should instead sit at
+0.80 — which clears with zero confidently-wrong outcomes at 80.0% coverage, double today's
+40.0% headline — is a real question the curve raises rather than settles: it turns on how
+much weight "no checksum behind the read" should carry by itself, independent of measured
+accuracy on this corpus. That is a policy call, not one this README makes unilaterally.
 
 This curve is a confidence-only sensitivity sweep — "if coverage were gated on confidence
 alone, what would threshold X buy" — used to justify `AUTO_THRESHOLD`. It is not a replay of
@@ -228,7 +233,7 @@ the shipped routing policy, so its rows do not reconcile with the headline above
 `INDETERMINATE` verdict regardless of confidence, and separately auto-passes `NOT_APPLICABLE`
 verdicts (the `NO_EXPIRY` classes) at a lower bar (0.70) since there is no wrong-date risk to
 guard against. That second path is why the headline shows 40.0% coverage — two `NO_EXPIRY`
-documents clear at confidence 0.92 (a third, `20`, no longer does — see above) — while this
+documents clear at confidence 0.92 (a third, `19`, no longer does — see above) — while this
 curve's own 0.95 row shows 32.0%: it has no notion of that fast path and scores every
 document on raw confidence alone.
 
@@ -375,30 +380,33 @@ coverage number on this corpus (see [Results](#results) for why); what it buys i
 grounded read on those 8 documents instead of a blind abstention, which matters most on the
 ones deterministic tiers cannot resolve at all.
 
-Cost for a full eval run with a key is measured, not estimated, at **~$0.22** for this
-25-document corpus at claude-opus-5 pricing (2 calls per escalated document; the harness
-reports actual spend computed from `usage`). See `eval/results.md`'s "Total spend" line for
-the exact figure from your run.
+Cost for a full eval run with a key is measured, not estimated, at **~$0.17** for this
+25-document corpus at claude-sonnet-5 pricing, the default model (2 calls per escalated
+document; the harness reports actual spend computed from `usage`). See
+`eval/results.md`'s "Total spend" line for the exact figure from your run.
 
 #### Comparing VLM models
 
-`ANTHROPIC_VLM_MODEL` overrides the default (`claude-opus-5`) for TC's two calls, so
-comparing a cheaper model is a rerun, not a code change:
+`ANTHROPIC_VLM_MODEL` overrides the default (`claude-sonnet-5`) for TC's two calls, so
+comparing a different model is a rerun, not a code change:
 
 ```bash
-ANTHROPIC_VLM_MODEL=claude-sonnet-5 npm run eval
+ANTHROPIC_VLM_MODEL=claude-opus-5 npm run eval
 ```
 
-Measured on this corpus: claude-sonnet-5 clears the same 96.0% overall accuracy with **zero
-confidently-wrong outcomes on either model** (including the prompt-injection case), at
-**42% lower total spend** ($0.17 vs $0.29) and faster mean TC latency (7.1s vs 8.7s) —
-coverage was actually a point higher on Sonnet in this run (40.0% vs 36.0%), though that
-specific number is closer to noise given the corpus size. TC is deliberately the
-last-resort tier (it only ever sees the ~25-30% of documents the deterministic/OCR tiers
-already gave up on), so the absolute dollars are small in either case — the point of
-running this side by side is to make the choice a measurement, not an assumption, the same
-way `AUTO_THRESHOLD` is derived from the accuracy-at-coverage curve rather than picked as a
-round number.
+Sonnet 5 wasn't the starting choice — this build shipped on `claude-opus-5` first, on the
+reasoning that TC only ever sees the hardest ~25-30% of documents (everything the
+deterministic/OCR tiers already gave up on), so it seemed to warrant the most capable model
+available. Once real spend data existed, the comparison said otherwise: claude-sonnet-5
+cleared the same 96.0% overall accuracy with **zero confidently-wrong outcomes on either
+model** (including the prompt-injection case), at **42% lower total spend** ($0.17 vs
+$0.29) and faster mean TC latency (7.1s vs 8.7s) — coverage was actually a point higher on
+Sonnet in this run (40.0% vs 36.0%), though that specific number is closer to noise given
+the corpus size than a real capability gap. The default was switched on that basis. TC's
+absolute dollars are small either way given how rarely it fires, so the point of running
+this side by side wasn't the money — it was not assuming the most expensive model is the
+right one without measuring, the same way `AUTO_THRESHOLD` is derived from the
+accuracy-at-coverage curve rather than picked as a round number.
 
 ### Troubleshooting
 
