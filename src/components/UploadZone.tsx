@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import PreviewModal from './PreviewModal';
 import styles from './UploadZone.module.css';
 
 /**
@@ -33,6 +34,12 @@ export interface PreparedUpload {
   file: File;
   /** Object/data URL for the thumbnail, or null for PDFs (no client rasterizer). */
   thumbnailUrl: string | null;
+  /**
+   * Full-size preview for the click-to-enlarge modal — the same pixels being uploaded,
+   * not a separate re-derivation, so what the user previews is exactly what the server
+   * sees. Null for PDFs, same reason `thumbnailUrl` is: no client-side rasterizer.
+   */
+  previewUrl: string | null;
   /** Human-readable note about what we did, e.g. "downscaled 4032×3024 → 2000×1500". */
   note: string;
   /** Original file name, for display. */
@@ -115,6 +122,7 @@ export async function prepareUpload(file: File): Promise<PreparedUpload> {
     return {
       file,
       thumbnailUrl: null,
+      previewUrl: null,
       note: `PDF, ${mb(file.size)}, sent as-is`,
       originalName: file.name,
       bytes: file.size,
@@ -132,6 +140,7 @@ export async function prepareUpload(file: File): Promise<PreparedUpload> {
       return {
         file,
         thumbnailUrl: null,
+        previewUrl: null,
         note: `${mb(file.size)}, not previewable in this browser — converting server-side`,
         originalName: file.name,
         bytes: file.size,
@@ -177,6 +186,9 @@ export async function prepareUpload(file: File): Promise<PreparedUpload> {
 
     const thumbCanvas = drawScaled(bitmap, THUMB_EDGE);
     const thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+    // Reuses the exact canvas that produced the upload blob — the preview modal shows
+    // precisely what was sent, not a separately re-derived rendering of it.
+    const previewUrl = out.canvas.toDataURL('image/jpeg', 0.85);
 
     const resized = `${out.canvas.width}×${out.canvas.height}`;
     const note =
@@ -187,6 +199,7 @@ export async function prepareUpload(file: File): Promise<PreparedUpload> {
     return {
       file: prepared,
       thumbnailUrl,
+      previewUrl,
       note,
       originalName: file.name,
       bytes: prepared.size,
@@ -224,6 +237,7 @@ export default function UploadZone({ onFile, onError, busy, preview }: UploadZon
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const dragDepth = useRef(0);
 
   const handleFiles = useCallback(
@@ -273,12 +287,8 @@ export default function UploadZone({ onFile, onError, busy, preview }: UploadZon
 
   return (
     <div className={styles.wrap}>
-      <button
-        type="button"
-        className={`${styles.zone} ${dragging ? styles.dragging : ''}`}
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
-        aria-describedby="upload-hint"
+      <div
+        className={`${styles.zone} ${dragging ? styles.dragging : ''} ${disabled ? styles.zoneDisabled : ''}`}
         onDragEnter={(e) => {
           e.preventDefault();
           dragDepth.current += 1;
@@ -299,38 +309,73 @@ export default function UploadZone({ onFile, onError, busy, preview }: UploadZon
       >
         {preview ? (
           <span className={styles.previewRow}>
-            <span className={styles.thumbBox}>
-              {preview.thumbnailUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- client-generated data URI; next/image cannot optimise it
+            {preview.previewUrl ? (
+              <button
+                type="button"
+                className={styles.thumbBox}
+                onClick={() => setPreviewOpen(true)}
+                // Deliberately not gated on `disabled`: looking at a larger preview of the
+                // document already selected doesn't touch the in-flight request or let you
+                // swap files, so there's no reason to block it while busy/preparing.
+                aria-label={`Preview ${preview.originalName} — opens larger`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- client-generated data URI; next/image cannot optimise it */}
                 <img
-                  src={preview.thumbnailUrl}
-                  alt={`Thumbnail of ${preview.originalName}`}
+                  src={preview.thumbnailUrl ?? preview.previewUrl}
+                  alt=""
                   className={styles.thumb}
                 />
-              ) : (
+              </button>
+            ) : (
+              <span className={styles.thumbBox}>
                 <span className={styles.thumbFallback} aria-hidden="true">
                   PDF
                 </span>
-              )}
-            </span>
-            <span className={styles.previewText}>
-              <span className={styles.previewName}>{preview.originalName}</span>
-              <span className={styles.previewNote}>{preview.note}</span>
-              <span className={styles.previewSwap}>Tap to choose a different document</span>
-            </span>
+              </span>
+            )}
+            <button
+              type="button"
+              className={styles.previewTextButton}
+              onClick={() => inputRef.current?.click()}
+              disabled={disabled}
+              aria-describedby="upload-hint"
+            >
+              <span className={styles.previewText}>
+                <span className={styles.previewName}>{preview.originalName}</span>
+                <span className={styles.previewNote}>{preview.note}</span>
+                <span className={styles.previewSwap}>Tap to choose a different document</span>
+              </span>
+            </button>
           </span>
         ) : (
-          <span className={styles.empty}>
-            <span className={styles.icon} aria-hidden="true">
-              ⇪
+          <button
+            type="button"
+            className={styles.emptyButton}
+            onClick={() => inputRef.current?.click()}
+            disabled={disabled}
+            aria-describedby="upload-hint"
+          >
+            <span className={styles.empty}>
+              <span className={styles.icon} aria-hidden="true">
+                ⇪
+              </span>
+              <span className={styles.title}>
+                {preparing ? 'Preparing…' : 'Upload a document'}
+              </span>
+              <span className={styles.sub}>Tap to browse · drag and drop · paste</span>
             </span>
-            <span className={styles.title}>
-              {preparing ? 'Preparing…' : 'Upload a document'}
-            </span>
-            <span className={styles.sub}>Tap to browse · drag and drop · paste</span>
-          </span>
+          </button>
         )}
-      </button>
+      </div>
+
+      {previewOpen && preview?.previewUrl ? (
+        <PreviewModal
+          src={preview.previewUrl}
+          alt={`Full preview of ${preview.originalName}`}
+          caption={preview.originalName}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
 
       <p id="upload-hint" className={styles.hint}>
         Images and PDFs. Photos are rotated by their EXIF tag, stripped of metadata

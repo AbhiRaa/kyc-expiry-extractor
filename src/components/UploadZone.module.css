@@ -4,6 +4,13 @@
   gap: 8px;
 }
 
+/*
+ * The dropzone is a <div>, not a <button>, once a preview exists — it has to contain two
+ * independently-clickable regions (the thumbnail opens a preview modal, the rest opens the
+ * file picker), and nested buttons are invalid HTML. Drag-and-drop and the disabled look
+ * live here on the container; each region's own click/keyboard affordance is a real
+ * <button> underneath (see .emptyButton, .thumbBox, .previewTextButton below).
+ */
 .zone {
   display: block;
   width: 100%;
@@ -12,18 +19,11 @@
   background: var(--surface);
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius);
-  cursor: pointer;
   text-align: left;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.zone:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--surface-2);
-}
-
-.zone:disabled {
-  cursor: default;
+.zoneDisabled {
   opacity: 0.65;
 }
 
@@ -31,6 +31,48 @@
   border-color: var(--accent);
   border-style: solid;
   background: var(--accent-soft);
+}
+
+/* Shared reset for the plain-HTML-button defaults, used by every clickable region inside
+ * .zone so they read as part of the dropzone rather than as separate boxed buttons. */
+.emptyButton,
+.previewTextButton {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.previewTextButton {
+  /* Direct flex child of .previewRow — fills the remaining row width next to the
+   * fixed-size thumbnail, and min-width: 0 is what lets the long filename/note text
+   * below actually wrap instead of overflowing the row. */
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.emptyButton:disabled,
+.previewTextButton:disabled {
+  cursor: default;
+}
+
+.emptyButton:focus-visible,
+.previewTextButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.emptyButton:hover:not(:disabled),
+.previewTextButton:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
 }
 
 .empty {
@@ -65,6 +107,8 @@
   gap: 14px;
 }
 
+/* Used as both a <button> (image preview — clickable) and a plain <span> (PDF fallback —
+ * nothing to preview), so the button-only rules below are harmless on the span variant. */
 .thumbBox {
   flex: 0 0 auto;
   width: 84px;
@@ -73,9 +117,29 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  padding: 0;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
+  font: inherit;
+}
+
+button.thumbBox {
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+button.thumbBox:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button.thumbBox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.thumbBox:disabled {
+  cursor: default;
 }
 
 .thumb {
