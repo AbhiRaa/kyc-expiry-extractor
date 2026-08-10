@@ -56,6 +56,20 @@ import {
 import { runTierCVlm } from './tier-c-vlm';
 import type { VlmClient } from './vlm-client';
 
+/**
+ * A tier threw instead of resolving or abstaining cleanly. Log the fact and the error's
+ * shape only — never document content, never extracted values (§15) — so a genuine bug is
+ * at least visible in the platform logs instead of silently degrading to an abstention
+ * indistinguishable from "nothing was found".
+ */
+function logTierFailure(tier: string, error: unknown): null {
+  console.error(`[router] ${tier} threw`, {
+    name: error instanceof Error ? error.name : 'unknown',
+    message: error instanceof Error ? error.message : String(error),
+  });
+  return null;
+}
+
 /** Document classes that are identity documents, for the DOB-earliest constraint. */
 const IDENTITY_CLASSES: ReadonlySet<DocumentClass> = new Set<DocumentClass>([
   'US_DRIVERS_LICENSE',
@@ -126,7 +140,7 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
         image: toUint8(page.fullResolution),
         today,
         quality: { effectiveDpi: page.quality.effective_dpi },
-      }).catch(() => null);
+      }).catch((error) => logTierFailure('TA_PDF417', error));
 
   const barcodeOk = Boolean(pdf417Result && !pdf417Result.abstained);
 
@@ -150,7 +164,7 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
       ocr: capturing,
       today,
       issuerConvention: inferIssuerConvention(page.textLayer),
-    }).catch(() => null);
+    }).catch((error) => logTierFailure('TB_OCR', error));
     if (tbResult) costUsd += tbResult.cost_usd;
   }
 
@@ -219,7 +233,7 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
       today,
       budgetUsd: input.budgetUsd,
       timeBudgetMs: Math.max(0, budgetMs - (Date.now() - started)),
-    }).catch(() => null);
+    }).catch((error) => logTierFailure('TC_VLM', error));
     if (tcResult) costUsd += tcResult.cost_usd;
   } else if (needVlm && !input.vlmClient) {
     reasonCodes.push('MODEL_UNAVAILABLE');

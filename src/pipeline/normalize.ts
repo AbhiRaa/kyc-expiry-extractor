@@ -46,6 +46,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
 import { abstain, type QualityMetrics, type ReasonCode, type TierResult } from '@/types/contract';
@@ -846,8 +847,15 @@ export async function normalizeDocument(
         detectedMime,
       );
     }
-    // Deliberately swallows the library message: §11.1 #2 requires no stack trace and no
-    // internals reach the client. The caller logs metrics and reason codes only (§15).
+    // Deliberately swallows the library message from the CLIENT response: §11.1 #2
+    // requires no stack trace and no internals reach the client. It is still logged
+    // server-side — error name/message only, never document content (§15) — because a
+    // genuine bug hiding behind an honest-looking CORRUPT_FILE rejection is worse than one
+    // that is at least visible in the platform logs.
+    console.error('[normalize] render threw, reporting as CORRUPT_FILE', {
+      name: error instanceof Error ? error.name : 'unknown',
+      message: error instanceof Error ? error.message : String(error),
+    });
     return reject(
       'CORRUPT_FILE',
       'That file could not be read — it may be corrupt or only partially uploaded.',
@@ -997,6 +1005,29 @@ async function decodeHeic(bytes: Uint8Array): Promise<Uint8Array> {
  * surfaces as a `PasswordException` instead of a decryption attempt (§11.1 #8).
  * `maxImageSize` caps the work an adversarial page can demand of the rasterizer.
  */
+/**
+ * `useSystemFonts: true` renders correctly on a dev machine with a normal font
+ * installation, but a serverless container typically has none — text silently renders as
+ * nothing rather than throwing, so a text-native PDF rasterizes to a blank page and OCR
+ * then (correctly, given what it was handed) finds zero text. pdf.js ships its own
+ * standard-font substitutes precisely so rendering does not depend on the host having
+ * fonts installed; point at the copy inside `pdfjs-dist` rather than the OS.
+ *
+ * Resolving this is trickier than it looks, and `require.resolve` is a dead end either
+ * way: a literal specifier (`require.resolve('pdfjs-dist/package.json')`) gets rewritten
+ * by Turbopack's production bundler into its own numeric module-id lookup instead of a
+ * real path (`TypeError: The "path" argument must be of type string. Received type
+ * number`); a specifier assembled at runtime to dodge that — the trick that works for
+ * zxing-wasm in tier-a-pdf417.ts — instead trips the dev bundler's static analysis
+ * (`Cannot find module as expression is too dynamic`). Sidestepping `require` entirely is
+ * the reliable option: Next server functions always run with `process.cwd()` at the
+ * project/function root (confirmed against Vercel's own `/var/task/node_modules/...`
+ * traces), so this is a plain path join with no module resolution involved at all.
+ */
+function resolveStandardFontDataUrl(): string {
+  return `${path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'standard_fonts')}/`;
+}
+
 async function renderPdf(bytes: Uint8Array, options: NormalizeOptions): Promise<RenderResult> {
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const maxPages = options.maxPdfPages ?? PDF_MAX_PAGES;
@@ -1005,7 +1036,8 @@ async function renderPdf(bytes: Uint8Array, options: NormalizeOptions): Promise<
   // bytes are still needed for the content hash and for any retry.
   const loadingTask = getDocument({
     data: new Uint8Array(bytes),
-    useSystemFonts: true,
+    useSystemFonts: false,
+    standardFontDataUrl: resolveStandardFontDataUrl(),
     maxImageSize: MAX_FULL_RES_PIXELS,
   });
 

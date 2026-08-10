@@ -405,6 +405,11 @@ pins `runtime = 'nodejs'` (not Edge) because the barcode, MRZ, OCR and image lib
 need Node APIs, and `next.config.ts` marks them as server-external so the bundler leaves
 their native and WASM assets alone.
 
+`GET /api/health` is a liveness probe (`{status, timestamp}`, no external calls — it never
+spends money). `GET /api/version` returns the deployed commit (`VERCEL_GIT_COMMIT_SHA`,
+set automatically by Vercel; falls back to `git rev-parse HEAD` in local dev) and the
+environment (`VERCEL_ENV`), so a deployment is auditable from the outside.
+
 ---
 
 ## Roadmap
