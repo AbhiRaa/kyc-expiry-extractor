@@ -77,12 +77,20 @@ export function evaluateValidity(input: ValidityInput): ValidityInfo {
   let verdict: Verdict;
   let daysRemaining: number | null = null;
   let rule = RULE_TEXT[basis];
+  // Overridden to null for NO_EXPIRY below — a class with no expiry semantics has nothing
+  // to report even when some tier turned up a candidate on the page.
+  let returnedDate = dateIso;
+  let returnedDateRaw = dateRaw;
 
   switch (basis) {
     case 'NO_EXPIRY':
       // The showcase abstention case. An employment letter with 8+ dates and no expiry
-      // semantics must NOT have a termination or appraisal date selected for it.
+      // semantics must NOT have a termination or appraisal date selected for it. Any date
+      // a tier found is irrelevant here, so it must not leak into the response either —
+      // a non-null `date` next to a NOT_APPLICABLE verdict reads as a found expiry.
       verdict = 'NOT_APPLICABLE';
+      returnedDate = null;
+      returnedDateRaw = null;
       break;
 
     case 'EXPIRY_DATE':
@@ -123,8 +131,8 @@ export function evaluateValidity(input: ValidityInput): ValidityInfo {
 
   return {
     basis,
-    date: dateIso,
-    date_raw: dateRaw,
+    date: returnedDate,
+    date_raw: returnedDateRaw,
     rule_applied: rule,
     verdict,
     days_remaining: daysRemaining,
@@ -155,6 +163,11 @@ const NON_EXPIRING_LABELS = [
   'NO EXPIRATION',
   'NO EXPIRY',
   'PERMANENT',
+  // Insurance-specific phrasing: coverage that runs indefinitely rather than to a printed
+  // end date, and the direct statement that no such date is printed at all.
+  'COVERAGE CONTINUOUS',
+  'CONTINUOUS COVERAGE',
+  'NO TERMINATION DATE',
 ];
 
 export function hasExplicitNonExpiringLabel(text: string | null | undefined): boolean {

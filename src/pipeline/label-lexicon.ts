@@ -70,6 +70,11 @@ const TEXT_LABELS: ReadonlyArray<{ display: string; language: LabelEntry['langua
   { display: 'VALID TO', language: 'en' },
   { display: 'ENDS ON', language: 'en' },
   { display: 'END DATE', language: 'en' },
+  // Insurance cards print a benefit/coverage period as a range rather than a labelled
+  // single date; the range parser already takes the end and infers day precision from a
+  // bare month-year, so recognizing the label is the only piece that was missing.
+  { display: 'BENEFIT PERIOD', language: 'en' },
+  { display: 'COVERAGE PERIOD', language: 'en' },
   { display: 'GOOD THRU', language: 'en' },
   { display: 'GOOD THROUGH', language: 'en' },
   { display: 'NOT VALID AFTER', language: 'en' },
@@ -189,6 +194,18 @@ export const NO_EXPIRY_SENTINELS: ReadonlySet<string> = new Set([
   'NO EXPIRY',
   'PERMANENT',
   'UNLIMITED',
+]);
+
+/**
+ * A word immediately before a label that flips its meaning from "this document's own
+ * date" to "a future one" — "Next statement date" is a preview of the *next* statement,
+ * not this one, but it contains "STATEMENT DATE" as a clean substring and would otherwise
+ * match the recency lexicon and disagree with the statement's actual period-end date.
+ */
+export const FORWARD_LOOKING_QUALIFIERS: ReadonlySet<string> = new Set([
+  'NEXT',
+  'UPCOMING',
+  'FOLLOWING',
 ]);
 
 // ---------------------------------------------------------------------------

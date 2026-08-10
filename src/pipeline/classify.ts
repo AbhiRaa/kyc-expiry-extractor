@@ -257,9 +257,32 @@ const CLASS_KEYWORDS: Array<{ cls: DocumentClass; weight: number; terms: string[
   },
   { cls: 'PASSPORT', weight: 1.5, terms: ['passport', 'passeport', 'pasaporte', 'reisepass'] },
   {
+    // Phrases that are unambiguous on their own — nobody prints "driver license" or the
+    // AAMVA DLN field code by accident. One hit here is real evidence, so this group sits
+    // at the same weight as PASSPORT / RESIDENCE_PERMIT above.
+    cls: 'US_DRIVERS_LICENSE',
+    weight: 1.4,
+    terms: [
+      'driver license',
+      "driver's license",
+      'driving licence',
+      'dl no',
+      // AAMVA field code as actually printed ("4d DLN ..."); "dl no" above does not occur
+      // on a real AAMVA layout, so without this a clean-OCR US DL never matches on its
+      // own field codes at all.
+      'dln',
+      'department of licensing',
+      'department of motor vehicles',
+    ],
+  },
+  {
+    // Generic enough to appear in unrelated prose ("the following restrictions apply...").
+    // Worth something only in combination with another hit, never alone — kept as a
+    // separate, lower-weight group so a single incidental match here can't reach the
+    // single-term "strong" threshold the way a group-above term can.
     cls: 'US_DRIVERS_LICENSE',
     weight: 1.2,
-    terms: ['driver license', "driver's license", 'driving licence', 'dl no', 'endorsements', 'restrictions'],
+    terms: ['endorsements', 'restrictions'],
   },
   {
     cls: 'US_STATE_ID',
@@ -269,7 +292,16 @@ const CLASS_KEYWORDS: Array<{ cls: DocumentClass; weight: number; terms: string[
   {
     cls: 'RESIDENCE_PERMIT',
     weight: 1.4,
-    terms: ['residence permit', 'titre de sejour', 'aufenthaltstitel', 'permesso di soggiorno'],
+    terms: [
+      'residence permit',
+      'titre de sejour',
+      'aufenthaltstitel',
+      // The generic legal term for the TD1 permit TYPE field ("ART DES TITELS:
+      // AUFENTHALTSERLAUBNIS") — distinct from "aufenthaltstitel" above, and printed as
+      // the field's own value rather than a label.
+      'aufenthaltserlaubnis',
+      'permesso di soggiorno',
+    ],
   },
   {
     cls: 'NATIONAL_ID_CARD',
@@ -561,10 +593,12 @@ function fromPdf417(
 
 function scoreKeywords(text: string): Array<{ cls: DocumentClass; score: number }> {
   const scores = new Map<DocumentClass, number>();
+  // A class may contribute more than one weighted term-group (§ US_DRIVERS_LICENSE above),
+  // so scores accumulate rather than overwrite.
   for (const { cls, weight, terms } of CLASS_KEYWORDS) {
     let hits = 0;
     for (const term of terms) if (text.includes(term)) hits++;
-    if (hits > 0) scores.set(cls, hits * weight);
+    if (hits > 0) scores.set(cls, (scores.get(cls) ?? 0) + hits * weight);
   }
   return [...scores.entries()]
     .map(([cls, score]) => ({ cls, score }))

@@ -9,9 +9,13 @@
  *   G1 — the brief specifies `evidence.crop_url: "/api/crop/<id>"`, described as
  *   in-memory and expiring with the request. Vercel functions are stateless with no
  *   shared memory across invocations, so that URL 404s whenever the follow-up request
- *   lands on a different instance. We return the crop inline as a base64 data URI
- *   instead. This also makes the "no documents are stored" claim strictly true —
- *   nothing outlives the response body.
+ *   lands on a different instance. We do not stand up a substitute endpoint or inline
+ *   the pixels either — the server returns `evidence.bbox` (coordinates only) and
+ *   nothing else, so no document pixels are ever serialized into a response at all.
+ *   This makes the "no documents are stored" claim stronger than the brief's own
+ *   design: not "expires with the request" but "never leaves the server as pixels in
+ *   the first place." The client already holds the original image it uploaded, so it
+ *   draws its own highlight from the bbox rather than round-tripping pixels back.
  */
 
 // ---------------------------------------------------------------------------
@@ -183,12 +187,8 @@ export interface EvidenceInfo {
   label_text: string | null;
   /** The source text the value was read from. */
   snippet: string | null;
+  /** G1: coordinates only. No document pixels are ever returned by the server. */
   bbox: BBox | null;
-  /**
-   * G1: inline base64 data URI rather than the brief's `/api/crop/<id>`.
-   * Capped at CROP_MAX_BYTES so it cannot blow the response budget.
-   */
-  crop_data_uri: string | null;
 }
 
 export interface IntegrityInfo {
@@ -345,8 +345,6 @@ export const REVIEW_FLOOR = 0.7;
 /** Deterministic-tier confidence. PDF417 carries Reed-Solomon ECC and MRZ carries
  *  check digits, so a clean decode is self-validating. */
 export const DETERMINISTIC_CONFIDENCE = 0.99;
-
-export const CROP_MAX_BYTES = 40_000;
 
 /** Hard ceiling on the whole pipeline, well inside the platform function limit. */
 export const PIPELINE_BUDGET_MS = 25_000;

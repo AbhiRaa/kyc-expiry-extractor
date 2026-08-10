@@ -24,43 +24,49 @@ import { DATE_ROLES, DOCUMENT_CLASSES } from './contract';
 // Hunter — "extract field X"
 // ---------------------------------------------------------------------------
 
-export const HunterOutput = z.object({
-  /** The value exactly as printed, before any normalization. Null if absent. */
-  expiry_raw: z.string().nullable(),
-  /** The label text exactly as printed next to the value, including OCR garbling. */
-  label_verbatim: z.string().nullable(),
-  /** 5–10 words of surrounding text the value was read from. */
-  neighbouring_text: z.string().nullable(),
-  reasoning: z.string(),
-});
+export const HunterOutput = z
+  .object({
+    /** The value exactly as printed, before any normalization. Null if absent. */
+    expiry_raw: z.string().nullable(),
+    /** The label text exactly as printed next to the value, including OCR garbling. */
+    label_verbatim: z.string().nullable(),
+    /** 5–10 words of surrounding text the value was read from. */
+    neighbouring_text: z.string().nullable(),
+    reasoning: z.string(),
+  })
+  .strict();
 export type HunterOutput = z.infer<typeof HunterOutput>;
 
 // ---------------------------------------------------------------------------
 // Mapper — "list what this document actually contains"
 // ---------------------------------------------------------------------------
 
-export const MapperDate = z.object({
-  /** Exactly as printed. */
-  raw: z.string(),
-  /** Label printed next to it, verbatim. Null if unlabelled. */
-  label_verbatim: z.string().nullable(),
-  /** 5–10 words of surrounding text. */
-  neighbouring_text: z.string().nullable(),
-  /** What the date appears to signify. UNKNOWN is a valid, useful answer. */
-  inferred_role: z.enum(DATE_ROLES),
-  /** True when the value is only partially legible. */
-  illegible: z.boolean(),
-});
+export const MapperDate = z
+  .object({
+    /** Exactly as printed. */
+    raw: z.string(),
+    /** Label printed next to it, verbatim. Null if unlabelled. */
+    label_verbatim: z.string().nullable(),
+    /** 5–10 words of surrounding text. */
+    neighbouring_text: z.string().nullable(),
+    /** What the date appears to signify. UNKNOWN is a valid, useful answer. */
+    inferred_role: z.enum(DATE_ROLES),
+    /** True when the value is only partially legible. */
+    illegible: z.boolean(),
+  })
+  .strict();
 export type MapperDate = z.infer<typeof MapperDate>;
 
-export const MapperOutput = z.object({
-  /** EVERY date visible on the document. */
-  dates: z.array(MapperDate),
-  document_type: z.enum(DOCUMENT_CLASSES).nullable(),
-  issuing_authority: z.string().nullable(),
-  /** Set when the page contains text that reads as an instruction to the model (§11.5 #66). */
-  contains_instruction_like_text: z.boolean(),
-});
+export const MapperOutput = z
+  .object({
+    /** EVERY date visible on the document. */
+    dates: z.array(MapperDate),
+    document_type: z.enum(DOCUMENT_CLASSES).nullable(),
+    issuing_authority: z.string().nullable(),
+    /** Set when the page contains text that reads as an instruction to the model (§11.5 #66). */
+    contains_instruction_like_text: z.boolean(),
+  })
+  .strict();
 export type MapperOutput = z.infer<typeof MapperOutput>;
 
 // ---------------------------------------------------------------------------

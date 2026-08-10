@@ -91,6 +91,14 @@ function pick(candidates: DateCandidate[], role: DateRole): DateCandidate | unde
 const MAX_VALIDITY_YEARS = 20;
 /** Nobody holds an identity document before this age, so expiry cannot precede it. */
 const MIN_HOLDER_AGE_YEARS = 15;
+/**
+ * No candidate may sit this far beyond today, independent of whether an ISSUE candidate
+ * was found. The per-issuance check below only fires once an ISSUE date has survived —
+ * this is the defense-in-depth backstop for when it hasn't (e.g. an injected date with no
+ * genuine issue date anywhere on the page). Set well above any real document's term so it
+ * never competes with the per-issuance check on a legitimate candidate.
+ */
+const MAX_YEARS_FROM_TODAY = 25;
 
 export function applyHardConstraints(ctx: ConstraintContext): ConstraintOutcome {
   const { candidates, today, isIdentityDocument } = ctx;
@@ -145,6 +153,22 @@ export function applyHardConstraints(ctx: ConstraintContext): ConstraintOutcome 
         eliminate(
           candidate,
           `Validity period of ${span.toFixed(1)} years exceeds the ${MAX_VALIDITY_YEARS}-year plausible maximum`,
+        );
+        if (!anomalies.includes('IMPLAUSIBLE_VALIDITY_PERIOD')) {
+          anomalies.push('IMPLAUSIBLE_VALIDITY_PERIOD');
+          reasonCodes.push('IMPLAUSIBLE_VALIDITY_PERIOD');
+        }
+        continue;
+      }
+    }
+
+    // Absolute ceiling, independent of an ISSUE candidate being present at all.
+    if (daysBetween(todayIso, iso) > 0) {
+      checked++;
+      if (exceedsAnniversary(todayIso, iso, MAX_YEARS_FROM_TODAY)) {
+        eliminate(
+          candidate,
+          `${iso} is more than ${MAX_YEARS_FROM_TODAY} years in the future, exceeding the plausible maximum`,
         );
         if (!anomalies.includes('IMPLAUSIBLE_VALIDITY_PERIOD')) {
           anomalies.push('IMPLAUSIBLE_VALIDITY_PERIOD');

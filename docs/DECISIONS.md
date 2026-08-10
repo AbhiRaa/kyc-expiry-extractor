@@ -30,9 +30,15 @@ with the request". Serverless functions are stateless with no shared memory acro
 invocations, so that URL 404s whenever the follow-up request lands on a different
 instance.
 
-**Changed to** `evidence.crop_data_uri` — the crop inline as a base64 data URI, capped at
-40 KB. Removes an endpoint and makes the "no documents are stored" claim in §15 strictly
-true: nothing outlives the response body.
+**Changed to** `evidence.bbox` only — normalized `[x0, y0, x1, y1]` coordinates, no pixels.
+No substitute crop endpoint, and no inline base64 image either: the server never encodes a
+document region into the response at all. This is a stronger version of the "no documents
+are stored" claim in §15 than either the brief's design or an inline-pixels alternative
+would give — not "expires with the request" but "never serialized as pixels in the first
+place." The client already holds the original file it uploaded (see `page.tsx`'s
+`prepared` state), so the UI renders the label and text snippet from `evidence`, plus the
+bbox coordinates, rather than round-tripping pixels back across the network to draw a
+highlight the browser could draw itself from data it already has.
 
 ### G2 — full-resolution decode conflicts with the upload ceiling
 

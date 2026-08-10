@@ -253,26 +253,6 @@
 
 /* ---- (e) evidence -------------------------------------------------------- */
 
-.figure {
-  margin: 0;
-}
-
-.crop {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
-  background: var(--surface-2);
-}
-
-.figCaption {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-
 .labelChip {
   display: inline-block;
   font-family: var(--font-mono);

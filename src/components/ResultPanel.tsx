@@ -136,22 +136,10 @@ function highlightSnippet(snippet: string, needle: string | null) {
   );
 }
 
-/**
- * Serialize for the raw-JSON view. The evidence crop is an inline base64 data URI
- * capped at 40 KB (contract G1) — pasting that into a `<pre>` produces a wall of
- * base64 that hides every other field and janks a phone. Everything else is
- * printed verbatim, because the point of the panel is that the UI is not editing
- * the contract.
- */
+/** Serialize for the raw-JSON view, verbatim — the point of the panel is that the UI is
+ * not editing the contract. */
 function prettyJson(result: ExtractionResponse): string {
-  return JSON.stringify(
-    result,
-    (key, value) =>
-      key === 'crop_data_uri' && typeof value === 'string'
-        ? `${value.slice(0, 48)}… [${value.length} chars, truncated for display only]`
-        : value,
-    2,
-  );
+  return JSON.stringify(result, null, 2);
 }
 
 export interface ResultPanelProps {
@@ -293,40 +281,33 @@ export default function ResultPanel({ result }: ResultPanelProps) {
         <p className={styles.tierNote}>{TIER_TEXT[evidence.source_tier]}</p>
       </div>
 
-      {/* (e) Evidence crop with the label highlighted. */}
+      {/* (e) Evidence — no document pixels ever leave the server (contract G1), so this
+          is the label, the text snippet, and the region coordinates, not an image. */}
       <div className={styles.block}>
         <h3 className={styles.blockTitle}>Evidence</h3>
-        {evidence.crop_data_uri ? (
-          <figure className={styles.figure}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- inline data URI (contract G1); next/image cannot optimise it */}
-            <img
-              className={styles.crop}
-              src={evidence.crop_data_uri}
-              alt={
-                evidence.label_text
-                  ? `Crop of the document showing the field labelled ${evidence.label_text}`
-                  : 'Crop of the document region the value was read from'
-              }
-            />
-            <figcaption className={styles.figCaption}>
-              {evidence.label_text ? (
-                <>
-                  Label read on the document:{' '}
-                  <span className={styles.labelChip}>{evidence.label_text}</span>
-                </>
-              ) : (
-                'This field is unlabelled on the document — the value was located by layout.'
-              )}
-            </figcaption>
-          </figure>
+        {evidence.label_text ? (
+          <p className={styles.faint}>
+            Label read on the document:{' '}
+            <span className={styles.labelChip}>{evidence.label_text}</span>
+          </p>
         ) : (
           <p className={styles.faint}>
-            No crop available — the value was not localizable to a region of the page.
+            This field is unlabelled on the document — the value was located by layout.
           </p>
         )}
         {evidence.snippet ? (
           <p className={styles.snippet}>{highlightSnippet(evidence.snippet, validity.date_raw)}</p>
         ) : null}
+        {evidence.bbox ? (
+          <p className={styles.faint}>
+            Region: <code className={styles.code}>[{evidence.bbox.map((n) => n.toFixed(3)).join(', ')}]</code>
+            {' '}(normalized x0, y0, x1, y1)
+          </p>
+        ) : (
+          <p className={styles.faint}>
+            No region available — the value was not localizable to a specific area of the page.
+          </p>
+        )}
       </div>
 
       {/* The "why?" panel — the differentiator (§10). */}

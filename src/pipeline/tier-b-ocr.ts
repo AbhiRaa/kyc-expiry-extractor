@@ -65,10 +65,12 @@ import {
 // Type-only: TB owes TA-MRZ a line shape it can consume directly (see `reconstructLines`).
 import type { OcrLine } from '@/pipeline/tier-a-mrz';
 import {
+  FORWARD_LOOKING_QUALIFIERS,
   MAX_LABEL_WORDS,
   hasAamvaFieldCodeLayout,
   isNoExpirySentinel,
   matchLabelPhrase,
+  normalizeLabelText,
   type LabelEntry,
 } from '@/pipeline/label-lexicon';
 
@@ -122,8 +124,13 @@ export const BELOW_MAX_DY_RATIO = 2.5;
 export const BELOW_MAX_DX_RATIO = 2;
 /** Minimum vertical overlap (as a fraction of the shorter box) to count as "same line". */
 const SAME_LINE_MIN_OVERLAP = 0.35;
-/** Widest run of OCR words a single date token may span ("01/2026 - 01/2028"). */
-const MAX_DATE_WINDOW = 5;
+/**
+ * Widest run of OCR words a single date token may span. A numeric range ("01/2026 -
+ * 01/2028") needs 5; a spelled-month range ("July 1, 2026 to July 31, 2026") tokenizes as
+ * 7 ("July" "1," "2026" "to" "July" "31," "2026") — below that, the range is invisible as a
+ * whole and its start alone gets mistaken for a plain date.
+ */
+const MAX_DATE_WINDOW = 7;
 /** Vertical gap, in label heights, still counted as the next line of the same value. */
 const LINE_CONTINUATION_MAX_GAP_RATIO = 2;
 
@@ -266,7 +273,10 @@ const RANGE_SPLIT = /\s*(?:–|—|-{1,2}|\bTO\b|\bTHRU\b|\bTHROUGH\b)\s*/i;
 
 /** 0 when the text is not date-shaped, else the number of date components it carries. */
 export function dateShapeStrength(text: string): number {
-  const upper = text.trim().toUpperCase();
+  // Mirrors the comma handling `normalizeFreeTextDate` already does (dates.ts) — "JULY 15,
+  // 2026" is the ordinary printed form of a month-name date, and without this the shape
+  // gate never lets it reach the parser that already knows what to do with it.
+  const upper = text.trim().toUpperCase().replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
   if (upper.length === 0) return 0;
   for (const shape of DATE_SHAPES) {
     if (!shape.pattern.test(upper)) continue;
@@ -401,7 +411,11 @@ export function findDateTokens(tokens: readonly OcrToken[], opts: FreeTextOption
       const range = isRangeShaped(raw);
       const strength = range ? RANGE_STRENGTH : dateShapeStrength(raw);
       if (strength === 0) continue;
-      if (best && strength <= best.strength) continue;
+      // `<` not `<=` (mirrors findLabelMatches above): on an equal score the wider window
+      // wins. Without this, a truncated range like "July 1, 2026 to July 31," ties the
+      // well-formed 7-word reading at RANGE_STRENGTH and wins by going first, leaving "31,"
+      // to be misread as a bare 2-digit year.
+      if (best && strength < best.strength) continue;
       // The shape gate passed; `dates.ts` decides whether it is a real date.
       if (!readsAsDate(raw, range, opts)) continue;
 
@@ -482,6 +496,18 @@ export function findLabelMatches(tokens: readonly OcrToken[]): LabelHit[] {
   let index = 0;
 
   while (index < tokens.length) {
+    // "Next statement date" contains "STATEMENT DATE" as a clean substring, but it names
+    // the *next* statement, not this one — a match starting right after one of these
+    // qualifiers is not a hit at all, the same way a label is never allowed to wrap a line.
+    if (
+      index > 0 &&
+      tokens[index - 1].line === tokens[index].line &&
+      FORWARD_LOOKING_QUALIFIERS.has(normalizeLabelText(tokens[index - 1].text))
+    ) {
+      index += 1;
+      continue;
+    }
+
     let best: LabelHit | null = null;
 
     for (let width = 1; width <= MAX_LABEL_WORDS; width++) {

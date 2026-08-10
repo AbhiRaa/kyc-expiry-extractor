@@ -262,10 +262,21 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
   const winner = outcome.survivors[0] ?? null;
   const winningTier = sourceTierOf(winner, tierResults);
 
-  // An explicit "NON-EXPIRING" label overrides the class default (§11.4 #48).
-  const explicitNonExpiring = tierResults.some((r) =>
-    r.candidates.some((c) => hasExplicitNonExpiringLabel(c.label_verbatim ?? c.snippet)),
-  );
+  // An explicit "NON-EXPIRING" label overrides the class default (§11.4 #48). Checked
+  // against every bound candidate's own label/value text, which is enough when the
+  // declaration sits right where a date would.
+  //
+  // Insurance cards get a second, wider check: "coverage continuous while employed" is
+  // prose elsewhere on the card, not attached to any label-value pair, so it never shows
+  // up in a candidate's snippet — there is no candidate at all once the card's only date
+  // (an effective/start date) is correctly excluded as non-expiry evidence. Scoped to
+  // MEDICAL_INSURANCE_CARD with no winner so it can never override a real coverage-end
+  // date found elsewhere on a busier card, and never touches other classes.
+  const explicitNonExpiring =
+    tierResults.some((r) => r.candidates.some((c) => hasExplicitNonExpiringLabel(c.label_verbatim ?? c.snippet))) ||
+    (documentClass === 'MEDICAL_INSURANCE_CARD' &&
+      !winner &&
+      hasExplicitNonExpiringLabel(groundingTokens.join(' ')));
 
   const validity = evaluateValidity({
     documentClass,
@@ -326,7 +337,6 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
       label_text: winner?.label_verbatim ?? null,
       snippet: winner?.snippet ?? null,
       bbox: winner?.bbox ?? null,
-      crop_data_uri: null, // populated by the crop step when a bbox is available
     },
     integrity: {
       checksum_validated: winningTierResult?.checksum_validated ?? null,
@@ -520,7 +530,6 @@ function rejectionResponse(
       label_text: null,
       snippet: null,
       bbox: null,
-      crop_data_uri: null,
     },
     integrity: {
       checksum_validated: null,
