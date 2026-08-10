@@ -16,15 +16,19 @@
  *          fusion can price them. Only the six hard failures in `NormalizeFailureKind`
  *          reject, and each of them is a fact about the bytes, not a judgement call.
  *
- *   T0-B — the frozen `ReasonCode` enum has no member for "corrupt file",
+ *   T0-B — the originally-frozen `ReasonCode` enum had no member for "corrupt file",
  *          "unsupported file type" or "password-protected PDF". Rather than widen a
- *          contract the whole repo is built against, every hard rejection carries
- *          `CLASS_UNRECOGNIZED` as its `ReasonCode` and a separate machine-readable
- *          `kind` discriminant that says which of the six it actually was. Callers
- *          that only speak the contract still get a valid code; callers that want the
- *          precise cause read `kind`. `message` is written to be shown to a user —
- *          §11.1 #2 requires no stack trace reaches the client, so no library error
- *          text is ever propagated into it.
+ *          contract the whole repo is built against mid-build, every hard rejection
+ *          carried `CLASS_UNRECOGNIZED` as its `ReasonCode` plus a separate
+ *          machine-readable `kind` discriminant that said which of the six it actually
+ *          was (docs/DECISIONS.md G10). The three named gaps — `UNSUPPORTED_TYPE`,
+ *          `CORRUPT_FILE`, `ENCRYPTED_PDF` — have since been added to the enum as a
+ *          follow-up and are used directly below; `EMPTY_FILE` and `RENDER_FAILED`
+ *          still fall back to `CLASS_UNRECOGNIZED`, since G10 never named those two as
+ *          gaps and the `kind` discriminant already disambiguates them for a caller
+ *          that needs to. `message` is written to be shown to a user — §11.1 #2
+ *          requires no stack trace reaches the client, so no library error text is
+ *          ever propagated into it.
  *
  *   T0-C — §11.1 #12 says a file under 50 KB is "likely too low-res", while §11.2 #26
  *          says a screenshot of a document is the *easiest* case — and a screenshot of
@@ -776,6 +780,7 @@ export async function normalizeDocument(
       'UNSUPPORTED_TYPE',
       'That file is not an image or a PDF. Upload a photo, a scan, or a PDF of the document.',
       null,
+      ['UNSUPPORTED_TYPE'],
     );
   }
   if (!sniffed.supported) {
@@ -783,6 +788,7 @@ export async function normalizeDocument(
       'UNSUPPORTED_TYPE',
       `Files of type ${sniffed.ext ?? sniffed.mime} are not supported. Upload an image or a PDF.`,
       sniffed.mime,
+      ['UNSUPPORTED_TYPE'],
     );
   }
   const detectedMime = sniffed.mime as SupportedMime;
@@ -860,6 +866,7 @@ export async function normalizeDocument(
         'ENCRYPTED_PDF',
         'That PDF is password-protected. Remove the password and upload it again.',
         detectedMime,
+        ['ENCRYPTED_PDF'],
       );
     }
     // Deliberately swallows the library message from the CLIENT response: §11.1 #2
@@ -875,6 +882,7 @@ export async function normalizeDocument(
       'CORRUPT_FILE',
       'That file could not be read — it may be corrupt or only partially uploaded.',
       detectedMime,
+      ['CORRUPT_FILE'],
     );
   }
 }

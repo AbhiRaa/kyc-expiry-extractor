@@ -206,7 +206,13 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
     // short-circuit.
     mrzFormat: mrzOk ? mrzFormatOf(mrzResult) : null,
     mrzIssuer: mrzResult?.issuer ?? null,
-    barcodeSample: barcodeOk ? (pdf417Result?.checksum_detail ?? null) : null,
+    // `classifyDocument`'s DCA/DCG element parsing (T0-F, G11) expects the raw AAMVA
+    // element stream, one `<id><value>` per line — exactly the shape `grounding_tokens`
+    // is already built in (tier-a-pdf417.ts). `checksum_detail` is human-readable prose
+    // and never contains a literal "DCA"/"DCG" element, so feeding it here silently
+    // defeated every DCA/DCG check below: a decoded DL always fell through to
+    // "no vehicle class" and was misclassified as US_STATE_ID.
+    barcodeSample: barcodeOk ? (pdf417Result?.grounding_tokens?.join('\n') ?? null) : null,
     // A PDF's embedded text layer is exact; OCR output is a recognition guess. The
     // classifier weighs a keyword hit differently depending on which it got.
     textSample: page.textLayer ?? ((tbResult?.grounding_tokens ?? []).join(' ') || null),

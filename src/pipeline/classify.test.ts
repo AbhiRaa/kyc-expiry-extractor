@@ -127,10 +127,41 @@ describe('machine-readable evidence', () => {
     expect(stateId.side).toBe('BACK');
   });
 
-  it('declines to pick between DL and state ID when the payload was not decoded', () => {
+  it('classes a decoded AAMVA licence issued outside the US as NON_US_DRIVERS_LICENSE, not US_DRIVERS_LICENSE (G11)', () => {
+    const canadian = classifyDocument(
+      signals({
+        hasPdf417: true,
+        barcodeSample: aamva({ DCG: 'CAN', DCA: 'C', DBA: '20290228' }),
+      }),
+    );
+    expect(canadian.class).toBe('NON_US_DRIVERS_LICENSE');
+    expect(canadian.inconclusive).toBe(false);
+    expect(canadian.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('treats an absent DCG as the historical US default, same as an explicit USA (G11)', () => {
+    const absent = classifyDocument(
+      signals({ hasPdf417: true, barcodeSample: aamva({ DCA: 'C', DBA: '04232030' }) }),
+    );
+    expect(absent.class).toBe('US_DRIVERS_LICENSE');
+
+    const explicit = classifyDocument(
+      signals({
+        hasPdf417: true,
+        barcodeSample: aamva({ DCG: 'USA', DCA: 'C', DBA: '04232030' }),
+      }),
+    );
+    expect(explicit.class).toBe('US_DRIVERS_LICENSE');
+  });
+
+  it('declines to pick between DL, state ID and non-US DL when the payload was not decoded', () => {
     const result = classifyDocument(signals({ hasPdf417: true, barcodeSample: null }));
     expect(result.inconclusive).toBe(true);
-    expect(result.hypotheses).toEqual(['US_DRIVERS_LICENSE', 'US_STATE_ID']);
+    expect(result.hypotheses).toEqual([
+      'US_DRIVERS_LICENSE',
+      'US_STATE_ID',
+      'NON_US_DRIVERS_LICENSE',
+    ]);
   });
 
   it('prefers the machine-readable region over misleading printed text', () => {

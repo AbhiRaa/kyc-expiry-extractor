@@ -28,6 +28,7 @@ import { daysBetween } from './dates';
 export const BASIS_BY_CLASS: Record<DocumentClass, ValidityBasis> = {
   US_DRIVERS_LICENSE: 'EXPIRY_DATE',
   US_STATE_ID: 'EXPIRY_DATE',
+  NON_US_DRIVERS_LICENSE: 'EXPIRY_DATE',
   PASSPORT: 'EXPIRY_DATE',
   NATIONAL_ID_CARD: 'EXPIRY_DATE',
   RESIDENCE_PERMIT: 'EXPIRY_DATE',

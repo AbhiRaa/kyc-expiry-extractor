@@ -454,8 +454,6 @@ Ordered by expected value.
    and off the VLM path entirely.
 5. **Human review queue UI** — the abstention path currently ends at a reason code; the
    thing that consumes it is out of scope here.
-6. **Widen the contract enums** — non-US driving licence class (G11), and reason codes for
-   corrupt / unsupported / encrypted input (G10).
 
 ---
 

@@ -25,6 +25,7 @@
 export const DOCUMENT_CLASSES = [
   'US_DRIVERS_LICENSE',
   'US_STATE_ID',
+  'NON_US_DRIVERS_LICENSE',
   'PASSPORT',
   'NATIONAL_ID_CARD',
   'RESIDENCE_PERMIT',
@@ -110,6 +111,13 @@ export const REASON_CODES = [
   'MULTIPLE_DOCUMENTS_IN_FRAME',
   'TEMPORARY_DOCUMENT',
   'NO_MACHINE_READABLE_REGION',
+
+  // Input rejection (T0-B / G10) — hard failures on the bytes themselves, distinct from
+  // the soft, advisory quality codes above and from CLASS_UNRECOGNIZED (unreadable file
+  // vs. readable-but-unclassifiable document).
+  'UNSUPPORTED_TYPE',
+  'CORRUPT_FILE',
+  'ENCRYPTED_PDF',
 
   // Extraction
   'NO_DATES_FOUND',

@@ -30,6 +30,14 @@
  *          `NONE` on a non-driver identification card. That is a real, cheap
  *          discriminator; the aspect ratio is not.
  *
+ *   G11 — AAMVA is not US-only (Canada uses it too, and `DCG` carries the issuing
+ *          country on every payload — see docs/DECISIONS.md's `aamva-parser` finding).
+ *          A populated `DCA` with `DCG` absent or `USA` is `US_DRIVERS_LICENSE`; any
+ *          other `DCG` is `NON_US_DRIVERS_LICENSE`, never the US-specific class. The
+ *          non-driver (`US_STATE_ID`) branch is left as-is — the taxonomy gap G11 named
+ *          was specifically the missing non-US *driving licence* class, not a general
+ *          non-US identification-card class.
+ *
  *   T0-G — `NOT_A_DOCUMENT` is only asserted on *positive* evidence of absence: a text
  *          source actually ran and came back with essentially no characters, and the
  *          image is not merely blurry. Otherwise a soft-focus passport photo would be
@@ -547,9 +555,15 @@ function fromPdf417(
     // licence, blank or NONE on a non-driver identification card.
     const dca = /DCA([^\r\n]*)/.exec(sample)?.[1]?.trim() ?? null;
     signalsUsed.push(`aamva:DCA=${dca === null ? 'absent' : dca || 'empty'}`);
+    // G11. DCG is the issuing country — AAMVA is a US/Canada standard, not US-only, and
+    // absent DCG (pre-version-1 cards, §T0-F's own `declaredDateOrder` handles the same
+    // gap for dates) is the historical US-only default.
+    const dcg = /DCG([^\r\n]*)/.exec(sample)?.[1]?.trim().toUpperCase() ?? null;
+    const isUs = dcg === null || dcg === 'USA';
+    signalsUsed.push(`aamva:DCG=${dcg ?? 'absent'}`);
     if (dca && dca.toUpperCase() !== 'NONE') {
       return {
-        class: 'US_DRIVERS_LICENSE',
+        class: isUs ? 'US_DRIVERS_LICENSE' : 'NON_US_DRIVERS_LICENSE',
         confidence: 0.96,
         side: 'BACK',
         issuer,
@@ -557,7 +571,9 @@ function fromPdf417(
         reasonCodes,
         hypotheses: [],
         signalsUsed,
-        rationale: 'AAMVA PDF417 carrying a populated DCA vehicle class — a driver licence.',
+        rationale: isUs
+          ? 'AAMVA PDF417 carrying a populated DCA vehicle class — a driver licence.'
+          : `AAMVA PDF417 carrying a populated DCA vehicle class, issued outside the US (DCG=${dcg}) — a non-US driver licence.`,
       };
     }
     return {
@@ -580,7 +596,9 @@ function fromPdf417(
     issuer,
     inconclusive: true,
     reasonCodes,
-    hypotheses: ['US_DRIVERS_LICENSE', 'US_STATE_ID'],
+    // G11: without the decoded payload there is no DCG either, so a non-US licence is
+    // still a live hypothesis, not just DL-vs-state-ID.
+    hypotheses: ['US_DRIVERS_LICENSE', 'US_STATE_ID', 'NON_US_DRIVERS_LICENSE'],
     signalsUsed,
     rationale:
       'A PDF417 barcode on a card is an AAMVA DL/ID, but without the decoded payload the two cannot be separated.',

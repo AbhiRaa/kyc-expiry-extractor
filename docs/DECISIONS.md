@@ -132,15 +132,42 @@ rejection on its own: reject only when estimated effective DPI is also below 150
 
 Nothing in §6 covers corrupt file, unsupported type, or password-protected PDF.
 
-**Worked around** rather than unfreezing the contract mid-build: these carry
+**Worked around** rather than unfreezing the contract mid-build: these carried
 `CLASS_UNRECOGNIZED` plus a separate machine-readable `kind` discriminant and a
 client-safe message. Three codes should be added to the enum in a follow-up.
+
+**Resolved** in the named follow-up: `UNSUPPORTED_TYPE`, `CORRUPT_FILE` and
+`ENCRYPTED_PDF` are now real `ReasonCode` members (`src/types/contract.ts`), and
+`normalize.ts`'s four call sites for those three `NormalizeFailureKind`s report them
+directly instead of falling back to `CLASS_UNRECOGNIZED`. `EMPTY_FILE` and
+`RENDER_FAILED` were not part of the named gap and still report `CLASS_UNRECOGNIZED` —
+the `kind` discriminant already disambiguates them for a caller that needs to.
 
 ### G11 — the document-class taxonomy has no non-US driving licence
 
 `DOCUMENT_CLASSES` offers `US_DRIVERS_LICENSE` but no general driving-licence class, so
 the Canadian card in the eval corpus is labelled `OTHER_DOCUMENT` — `US_DRIVERS_LICENSE`
 would be factually false. Worth widening the enum.
+
+**Resolved**: added `NON_US_DRIVERS_LICENSE`. `classify.ts`'s `fromPdf417` (T0-F) now
+reads AAMVA's `DCG` (issuing country) alongside the `DCA` (vehicle class) check it
+already did — a populated `DCA` with `DCG` absent or `USA` is still
+`US_DRIVERS_LICENSE`; any other `DCG` is `NON_US_DRIVERS_LICENSE`. Fixing this exposed a
+second, independent bug in the same code path: `router.ts` was feeding the classifier
+`pdf417Result.checksum_detail` (a human-readable prose string) as `barcodeSample`,
+instead of the raw AAMVA element stream. `fromPdf417`'s regex parsing needs one
+`<id><value>` element per line — exactly the shape `grounding_tokens` is already built
+in — and prose never contains a literal `DCA`/`DCG` element, so the DCA check silently
+never matched *any* real decoded barcode in production. Every successfully-decoded DL
+was landing in the "no vehicle class" branch and being reported as `US_STATE_ID`. The
+constraint engine's `EXPIRY_DATE` basis is identical for both classes (`validity.ts`),
+so this never showed up as a wrong verdict — only as wrong metadata — which is likely
+why it went unnoticed: there is no router-level integration test exercising a decoded
+barcode end-to-end (`classify.test.ts` only unit-tests `classifyDocument` directly with
+hand-built signals, bypassing this wiring). Fixed by passing
+`grounding_tokens.join('\n')` instead; the eval corpus's Canadian licence
+(`06_dl_on_canada_ccyymmdd.png`) now classifies as `NON_US_DRIVERS_LICENSE` end-to-end
+via `TA_PDF417`, confirmed by direct pipeline run.
 
 ### G12 — §12's stated corpus size disagrees with its own itemised list
 

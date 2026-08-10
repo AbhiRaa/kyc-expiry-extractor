@@ -136,7 +136,9 @@ describe('magic-byte sniffing (§7.1)', () => {
     );
     expect(rejection.kind).toBe('UNSUPPORTED_TYPE');
     expect(rejection.detectedMime).toBe('application/zip');
-    expect(rejection.reasonCodes).toContain('CLASS_UNRECOGNIZED');
+    // G10 — a dedicated code, not the CLASS_UNRECOGNIZED catch-all: the file was never
+    // classifiable as a document at all, which is a different fact than "unreadable".
+    expect(rejection.reasonCodes).toContain('UNSUPPORTED_TYPE');
   }, TIMEOUT);
 
   it('rejects plain text, which has no magic signature at all', async () => {
@@ -340,6 +342,7 @@ describe('rejection paths (§11.1)', () => {
     const rejection = expectRejected(await normalizeDocument(corrupt));
     expect(rejection.kind).toBe('CORRUPT_FILE');
     expect(rejection.detectedMime).toBe('image/jpeg');
+    expect(rejection.reasonCodes).toContain('CORRUPT_FILE'); // G10
     // §11.1 #2 — nothing from libvips reaches the client.
     expect(rejection.message).not.toMatch(/vips|VipsJpeg|premature/i);
   }, TIMEOUT);
@@ -473,6 +476,7 @@ describe('PDF handling (§11.1 #6-#10)', () => {
     const pdf = await makePdf((doc) => doc.text('confidential'), { userPassword: 'hunter2' });
     const rejection = expectRejected(await normalizeDocument(pdf));
     expect(rejection.kind).toBe('ENCRYPTED_PDF');
+    expect(rejection.reasonCodes).toContain('ENCRYPTED_PDF'); // G10
     expect(rejection.message).toMatch(/password-protected/);
   }, TIMEOUT);
 

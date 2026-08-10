@@ -1130,16 +1130,18 @@ async function dlCanadian(): Promise<void> {
   );
   record({
     filename,
-    expected_class: 'OTHER_DOCUMENT',
+    expected_class: 'NON_US_DRIVERS_LICENSE',
     expected_basis: 'EXPIRY_DATE',
     expected_date: spec.expiry,
     expected_verdict: 'VALID',
     notes:
       'Canadian (Ontario) licence. THE DATE-ORDER TRAP: AAMVA serializes dates per DCG, so this ' +
       "barcode's DBA is CCYYMMDD (20290228) while every US card in this corpus is MMDDCCYY. A " +
-      'parser hardcoded to MMDDCCYY reads month=20 and must abstain, never coerce. TAXONOMY GAP: ' +
-      'DOCUMENT_CLASSES has no non-US driving licence, so ground truth uses OTHER_DOCUMENT - ' +
-      'US_DRIVERS_LICENSE would be factually false. Flagged for the README decision log.',
+      'parser hardcoded to MMDDCCYY reads month=20 and must abstain, never coerce. TAXONOMY GAP ' +
+      '(G11, docs/DECISIONS.md), now resolved: DOCUMENT_CLASSES originally had no non-US driving ' +
+      'licence, so ground truth used OTHER_DOCUMENT - US_DRIVERS_LICENSE would have been ' +
+      'factually false. NON_US_DRIVERS_LICENSE was added and the classifier now reads DCG to pick ' +
+      'between it and US_DRIVERS_LICENSE off the same decoded payload.',
   });
 }
 
