@@ -64,8 +64,17 @@ export const DOWNSCALE_LONG_EDGE = 2000;
 /** §7.3 / §11.1 #7. */
 export const PDF_RASTER_DPI = 300;
 
-/** T0-D — a text-native PDF only needs pixels for the evidence crop. */
-export const TEXT_LAYER_RASTER_DPI = 150;
+/**
+ * T0-D's original assumption — "a text-native PDF only needs pixels for the evidence
+ * crop, so a lower DPI is fine" — does not hold for the case that actually exercises this
+ * path most: a phone-scanning app (Adobe Scan and similar) that OCRs a photographed page
+ * and embeds its OWN hidden text layer under the image. `TEXT_LAYER_MIN_CHARS` cannot tell
+ * that embedded layer apart from a genuinely digital, position-exact one — and a scanned
+ * identity document's MRZ needs MORE resolution than a normal page, not less, so silently
+ * halving DPI on exactly the documents where TA/TB most need to succeed is backwards. Equal
+ * to `PDF_RASTER_DPI` until there is a reliable way to tell the two cases apart.
+ */
+export const TEXT_LAYER_RASTER_DPI = PDF_RASTER_DPI;
 
 /** §11.1 #9 — a 40-page bank statement must not cost 40 pages of work. */
 export const PDF_MAX_PAGES = 3;
