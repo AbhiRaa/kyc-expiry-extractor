@@ -22,10 +22,21 @@
  * available" message, never a broken image or a crash (§10).
  */
 
+/**
+ * Status tone for the dot on a sample button. It previews the *kind* of outcome
+ * the sample demonstrates — a pass, a correct failure, a correct abstention, a
+ * class-specific rule, an adversarial input — so the six buttons read as a tour
+ * rather than as an undifferentiated list. Decoration only: `expected` states the
+ * same thing in words, so nothing is carried by colour alone (WCAG 1.4.1).
+ */
+export type SampleTone = 'ok' | 'bad' | 'warn' | 'neutral' | 'accent';
+
 /** A curated eval document, addressable as a static asset under `public/`. */
 export interface SampleDoc {
   /** Stable id, used as a React key and in the button's `data-` hooks. */
   id: string;
+  /** Tone of the status dot on the button. */
+  tone: SampleTone;
   /** Public URL of the asset. Must resolve to a real file under `public/samples/`. */
   path: string;
   /** MIME type to attach to the synthesized `File` before POSTing to /api/extract. */
@@ -48,6 +59,7 @@ export const SAMPLES_DIR = '/samples';
 export const SAMPLE_DOCS: readonly SampleDoc[] = [
   {
     id: 'dl-back-pdf417',
+    tone: 'ok',
     path: `${SAMPLES_DIR}/02_dl_tx_back_pdf417.png`,
     mime: 'image/png',
     label: "Driver's licence (back)",
@@ -56,6 +68,7 @@ export const SAMPLE_DOCS: readonly SampleDoc[] = [
   },
   {
     id: 'passport-expired',
+    tone: 'bad',
     path: `${SAMPLES_DIR}/10_passport_usa_expired.png`,
     mime: 'image/png',
     label: 'Expired passport',
@@ -64,6 +77,7 @@ export const SAMPLE_DOCS: readonly SampleDoc[] = [
   },
   {
     id: 'employment-letter',
+    tone: 'neutral',
     path: `${SAMPLES_DIR}/19_employment_letter_many_dates.pdf`,
     mime: 'application/pdf',
     label: 'Employment letter',
@@ -72,6 +86,7 @@ export const SAMPLE_DOCS: readonly SampleDoc[] = [
   },
   {
     id: 'utility-bill',
+    tone: 'ok',
     path: `${SAMPLES_DIR}/17_utility_bill_recent.pdf`,
     mime: 'application/pdf',
     label: 'Utility bill',
@@ -80,6 +95,7 @@ export const SAMPLE_DOCS: readonly SampleDoc[] = [
   },
   {
     id: 'insurance-range',
+    tone: 'accent',
     path: `${SAMPLES_DIR}/12_insurance_date_range.png`,
     mime: 'image/png',
     label: 'Insurance card',
@@ -88,6 +104,7 @@ export const SAMPLE_DOCS: readonly SampleDoc[] = [
   },
   {
     id: 'prompt-injection',
+    tone: 'warn',
     path: `${SAMPLES_DIR}/24_prompt_injection_sticker.png`,
     mime: 'image/png',
     label: 'Injection sticker',

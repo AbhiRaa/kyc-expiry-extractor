@@ -1,0 +1,121 @@
+/**
+ * The tier route. Six tiles on one line at desktop width, wrapping to two or three
+ * rows as the canvas narrows — `flex: 1 1 120px` with a 112px floor, so they share
+ * space evenly rather than the last one collapsing.
+ */
+
+.card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: 18px 20px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pills {
+  display: flex;
+  gap: 6px;
+}
+
+.pill {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.steps {
+  list-style: none;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.step {
+  flex: 1 1 120px;
+  min-width: 112px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.label {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-faint);
+}
+
+.state {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* The tier that produced the answer. The only accented tile on the row, which is
+   the whole point — it is where the eye should land. */
+.step_resolved {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.step_resolved .code,
+.step_resolved .state {
+  color: var(--accent-text);
+}
+.step_resolved .label {
+  color: var(--ink);
+}
+
+/* Ran unconditionally. Present and solid, but not the answer. */
+.step_ran {
+  background: var(--surface-alt);
+}
+.step_ran .code {
+  color: var(--text-muted);
+}
+.step_ran .label {
+  color: var(--ink);
+}
+
+/* Tried, found nothing it would stand behind. */
+.step_abstained {
+  background: var(--surface-alt);
+}
+.step_abstained .label {
+  color: var(--text-muted);
+}
+
+/* Never invoked — a cheaper tier had already resolved. Left unfilled so the row
+   reads as "the pipeline stopped here". */
+.step_skipped {
+  background: transparent;
+}

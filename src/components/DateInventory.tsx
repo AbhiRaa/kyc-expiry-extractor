@@ -40,6 +40,12 @@ export function humanizeRole(role: DateRole): string {
 /** How a candidate ended up: the chosen one, ruled out, or simply not needed. */
 export type CandidateStatus = 'selected' | 'eliminated' | 'surviving';
 
+const STATUS_LABEL: Record<CandidateStatus, { glyph: string; text: string }> = {
+  selected: { glyph: '✔', text: 'Selected' },
+  eliminated: { glyph: '✕', text: 'Ruled out' },
+  surviving: { glyph: '–', text: 'Considered' },
+};
+
 /**
  * Which candidate the verdict rests on. Matching is by normalized ISO first
  * (the contract's canonical form) and by the raw string second, so a document
@@ -80,11 +86,23 @@ export interface DateInventoryProps {
  * The full date inventory (§10, contract: "Always returned — this is the demo's
  * proof of work").
  *
- * It is deliberately a *table* rather than the card list the why-panel uses: the
- * why-panel argues, this enumerates. A reviewer scanning a bank statement with 40
- * transaction dates wants dense aligned columns, not 40 paragraphs. Below 640px
- * the table reflows into labelled rows, because a six-column table at 375px is
- * unreadable no matter how it is styled.
+ * v1 rendered this as a six-column table — status, as read, normalized, label,
+ * role, confidence — reflowing to labelled rows below 640px. v2 replaces it with
+ * the same row language the rest of the panel uses: a status pill, the string as
+ * read, its role, its confidence, all on one line in a bordered well.
+ *
+ * That is a narrower primary line than the table had, so the three columns it drops
+ * are not dropped from the *page*: the normalized ISO, the verbatim label and the
+ * eliminating constraint move to a second line that appears only on the rows that
+ * actually have something to say. A clean row stays one line; a ruled-out row grows
+ * to carry its reason. The audit trail is intact — a 40-page bank statement's
+ * transaction dates still each state what removed them — but the common case reads
+ * as a list rather than as a spreadsheet, and a phone no longer needs a horizontal
+ * scroller to show it.
+ *
+ * A list rather than a `<table>` follows from that: once a row is two lines of
+ * mixed-width content it is no longer tabular data, and marking it up as a table
+ * would promise column alignment the layout does not keep.
  */
 export default function DateInventory({ dates, selectedIndex }: DateInventoryProps) {
   if (dates.length === 0) {
@@ -92,56 +110,50 @@ export default function DateInventory({ dates, selectedIndex }: DateInventoryPro
   }
 
   return (
-    <div className={styles.scroller}>
-      <table className={styles.table}>
-        <caption className={styles.caption}>
-          Every date string the pipeline saw, in the order it was found.
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Status</th>
-            <th scope="col">As read</th>
-            <th scope="col">Normalized</th>
-            <th scope="col">Label on document</th>
-            <th scope="col">Role</th>
-            <th scope="col">Conf.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {dates.map((date, index) => {
-            const status = statusOf(date, index, selectedIndex);
-            return (
-              <tr key={`${date.raw}-${index}`} className={styles[status]}>
-                <td data-label="Status">
-                  <span className={`${styles.badge} ${styles[`badge_${status}`]}`}>
-                    {status === 'selected'
-                      ? '✔ Selected'
-                      : status === 'eliminated'
-                        ? '✕ Ruled out'
-                        : '– Considered'}
-                  </span>
+    <>
+      <p className={styles.caption}>
+        Every date string the pipeline saw, in the order it was found.
+      </p>
+      <ul className={styles.list}>
+        {dates.map((date, index) => {
+          const status = statusOf(date, index, selectedIndex);
+          const label = STATUS_LABEL[status];
+          // Only the parts that add something. `iso === raw` on an already-ISO
+          // document would just be the same string twice.
+          const showIso = Boolean(date.iso) && date.iso !== date.raw;
+          const hasMeta = showIso || Boolean(date.label_verbatim) || Boolean(date.eliminated_by);
+
+          return (
+            <li key={`${date.raw}-${index}`} className={`${styles.row} ${styles[status]}`}>
+              <div className={styles.rowMain}>
+                <span className={styles.badge}>
+                  <span aria-hidden="true">{label.glyph} </span>
+                  {label.text}
+                </span>
+                <span className={styles.raw}>{date.raw}</span>
+                <span className={styles.role}>{humanizeRole(date.inferred_role)}</span>
+                <span className={styles.confidence}>{date.confidence.toFixed(2)}</span>
+              </div>
+
+              {hasMeta ? (
+                <p className={styles.rowMeta}>
+                  {showIso ? <span className={styles.mono}>{date.iso}</span> : null}
+                  {showIso && date.label_verbatim ? ' · ' : null}
+                  {date.label_verbatim ? (
+                    <>
+                      labelled <q className={styles.mono}>{date.label_verbatim}</q>
+                    </>
+                  ) : null}
+                  {(showIso || date.label_verbatim) && date.eliminated_by ? ' · ' : null}
                   {date.eliminated_by ? (
                     <span className={styles.reason}>{date.eliminated_by}</span>
                   ) : null}
-                </td>
-                <td data-label="As read" className={styles.mono}>
-                  {date.raw}
-                </td>
-                <td data-label="Normalized" className={styles.mono}>
-                  {date.iso ?? <span className={styles.null}>not normalizable</span>}
-                </td>
-                <td data-label="Label on document">
-                  {date.label_verbatim ?? <span className={styles.null}>unlabelled</span>}
-                </td>
-                <td data-label="Role">{humanizeRole(date.inferred_role)}</td>
-                <td data-label="Confidence" className={styles.mono}>
-                  {date.confidence.toFixed(2)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

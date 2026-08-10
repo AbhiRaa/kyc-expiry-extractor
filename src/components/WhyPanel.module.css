@@ -1,282 +1,274 @@
+/**
+ * The "why?" panel, v2.
+ *
+ * One card, three registers of emphasis: the claim is a tone-washed block, the
+ * constraint tally is a row of quiet pills, and the ruled-out candidates are plain
+ * rows in a recessed well. The visual weight is deliberately the reverse of the
+ * data volume — the one selected date gets the loudest treatment and the 880
+ * eliminated transaction dates get the quietest.
+ */
+
 .panel {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
   background: var(--surface);
-  padding: 16px;
+  border-radius: var(--radius-card);
+  padding: 22px 24px;
 }
 
 .head {
-  margin-bottom: 14px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 
 .heading {
-  font-size: 17px;
-  font-weight: 650;
-  line-height: 1.3;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .counts {
-  margin-top: 3px;
+  font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--text-muted);
 }
 
-/* ---- the claim ---------------------------------------------------------- */
+/* ---------------------------------------------------------------- claim ---- */
 
+/* Tone is a local custom property so the abstained variant is a one-line override
+   rather than a duplicated block. */
 .claim {
-  border: 1px solid var(--ok-border);
-  background: var(--ok-bg);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
+  --claim-fg: var(--ok-fg);
+  --claim-bg: var(--ok-bg);
+  --claim-border: var(--ok-border);
+
+  border: 1px solid var(--claim-border);
+  background: var(--claim-bg);
+  border-radius: 14px;
+  padding: 15px 17px;
 }
 
+/* An abstention is not a failure and not a pass, so it is neutral. Rendering it in
+   the "selected" green would claim a validation that never happened. */
 .claimAbstained {
-  border-color: var(--neutral-border);
-  background: var(--neutral-bg);
+  --claim-fg: var(--neutral-fg);
+  --claim-bg: var(--neutral-bg);
+  --claim-border: var(--neutral-border);
 }
 
 .claimTop {
   display: flex;
   align-items: baseline;
+  gap: 10px;
   flex-wrap: wrap;
-  gap: 8px;
+}
+
+.tag {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--claim-border);
+  color: var(--claim-fg);
 }
 
 .claimDate {
-  font-size: 19px;
-  font-weight: 650;
   font-family: var(--font-mono);
-  letter-spacing: -0.01em;
-}
-
-.claimAbstained .claimDate {
-  font-family: var(--font-sans);
-  font-size: 16px;
-}
-
-.claimFacts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 22px;
-  margin-top: 10px;
-}
-
-.claimFacts dt {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.claimFacts dd {
-  font-size: 13.5px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .claimRule {
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  padding-top: 11px;
+  border-top: 1px solid var(--claim-border);
   font-size: 13.5px;
-  line-height: 1.5;
+  line-height: 1.55;
+  color: var(--text-muted);
 }
 
 .ruleLabel {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 600;
   color: var(--text-muted);
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 
 .abstainNote {
   margin-top: 10px;
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--text-muted);
-  line-height: 1.5;
 }
 
-/* ---- constraint tally --------------------------------------------------- */
-
-.subheading {
-  font-size: 11.5px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin: 18px 0 8px;
-}
+/* ---------------------------------------------------------------- tally ---- */
 
 .tally {
+  list-style: none;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  list-style: none;
+  margin-top: 16px;
 }
 
 .tallyChip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 4px 10px;
-  background: var(--surface-2);
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-
-.tallyCount {
-  font-family: var(--font-mono);
-  font-weight: 700;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  background: var(--surface-alt);
   font-size: 12px;
   color: var(--text-muted);
 }
 
-/* ---- candidate rows ----------------------------------------------------- */
+.tallyReason {
+  min-width: 0;
+}
+
+.tallyCount {
+  font-family: var(--font-mono);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ candidates ---- */
+
+.subheading {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 20px 0 9px;
+}
 
 .list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 
 .row {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-
-.rowBody {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.rowDate {
-  display: flex;
-  align-items: baseline;
+  gap: 12px;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  font-size: 14.5px;
-  font-weight: 600;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  background: var(--surface-alt);
 }
 
-.rowIso {
+/* Struck through and muted: the eye should pass over it and land on the reason. */
+.rowDate {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* The constraint that killed it — the only full-contrast text in the row, because
+   it is the part that answers the question. */
+.rowReason {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.rowRole {
   font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 400;
-  color: var(--text-faint);
-}
-
-.rowMeta {
-  font-size: 12px;
   color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
-.rowReason {
-  margin-top: 3px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text);
-}
-
-.tag {
-  flex: 0 0 auto;
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 650;
-  white-space: nowrap;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  margin-top: 1px;
-}
-
-.tagSelected {
-  color: var(--ok-fg);
-  background: var(--surface);
-  border-color: var(--ok-border);
-}
-
-.tagOut {
-  color: var(--bad-fg);
-  background: var(--bad-bg);
-  border-color: var(--bad-border);
-}
-
-.tagKept {
-  color: var(--warn-fg);
-  background: var(--warn-bg);
-  border-color: var(--warn-border);
-}
-
-.tagAbstained {
-  color: var(--neutral-fg);
-  background: var(--surface);
-  border-color: var(--neutral-border);
 }
 
 .more {
-  margin-top: 10px;
-  min-height: 44px;
-  width: 100%;
-  padding: 10px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--accent);
+  margin-top: 9px;
+  padding: 7px 14px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
   cursor: pointer;
 }
 
-.more:hover {
-  background: var(--surface-2);
+/* ------------------------------------------------------------- survivors ---- */
+
+/* Chips rather than rows: nothing was decided about these, so they get the least
+   structure of anything in the panel. */
+.survivors {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.survivor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  background: var(--surface-alt);
+}
+
+.survivorDate {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.survivorMeta {
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
 .emptyNote {
+  margin-top: 14px;
   font-size: 13px;
+  line-height: 1.55;
   color: var(--text-muted);
-  margin-top: 12px;
-  line-height: 1.5;
-}
-
-.mono {
-  font-family: var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-.faint {
-  color: var(--text-faint);
-  font-style: italic;
 }
 
 .srOnly {
   position: absolute;
   width: 1px;
   height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+  border: 0;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .panel {
-    padding: 14px 12px;
+    padding: 18px 16px;
   }
 
-  .row {
-    flex-direction: column;
-    gap: 6px;
+  .heading {
+    font-size: 17px;
   }
 }

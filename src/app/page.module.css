@@ -1,279 +1,534 @@
-.page {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 24px 16px 48px;
+/**
+ * The v2 app shell.
+ *
+ * v1 was a single stacked column: header, upload card, samples card, then the
+ * result pushed below all of it. v2 splits the page into a *persistent rail* and
+ * a *verdict canvas* inside one framed window, which changes what the page is
+ * for: the inputs stop scrolling away, so a reviewer can fire the six samples in
+ * sequence and watch the canvas change without ever losing the controls. On a
+ * phone the frame stacks back into one column, which is v1's layout — the right
+ * answer at 430px, just not at 1360px.
+ */
+
+.shell {
+  display: flex;
+  justify-content: center;
+  padding: 30px 24px 70px;
+}
+
+/* The window. `overflow: hidden` is what makes the nested radii read as one
+   object rather than as cards that happen to sit near a rounded box. */
+.frame {
+  width: 100%;
+  max-width: 1360px;
+  display: flex;
+  flex-direction: row;
+  background: var(--app-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-frame);
+  box-shadow: var(--frame-shadow);
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- rail ---- */
+
+.rail {
+  flex: 0 0 300px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  padding: 26px 22px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
 }
 
-/* ---- header -------------------------------------------------------------- */
-
-.header {
+.brand {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 10px;
 }
 
-.title {
-  font-size: clamp(22px, 6vw, 30px);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.brandMark {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-on);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
   line-height: 1.15;
+  min-width: 0;
 }
 
-.tagline {
-  font-size: 15px;
+.brandName {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.brandSub {
+  font-size: 12px;
   color: var(--text-muted);
-  line-height: 1.55;
-  max-width: 62ch;
 }
 
-.privacy {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 11px 13px;
-}
-
-.privacy strong {
-  color: var(--text);
-}
-
-.privacyGlyph {
-  font-size: 15px;
-  line-height: 1.4;
-}
-
-/* ---- layout -------------------------------------------------------------- */
-
-.main {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  box-shadow: var(--shadow);
-}
-
-.sectionTitle {
+/* Section eyebrow — 11.5px uppercase mono-ish tracking, used for every group
+   label in the rail and in the result panel so the two read as one system. */
+.eyebrow {
   font-size: 11.5px;
-  font-weight: 650;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--text-muted);
-  margin-bottom: 10px;
 }
-
-.sectionNote {
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin-bottom: 12px;
-  max-width: 62ch;
-}
-
-/* ---- sample buttons ------------------------------------------------------ */
 
 .samples {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sampleList {
   list-style: none;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .sample {
+  width: 100%;
+  text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  min-height: 44px;
+  gap: 3px;
   padding: 11px 13px;
-  text-align: left;
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  background: var(--surface-alt);
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  font-family: inherit;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .sample:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--border-strong);
 }
 
 .sample:disabled {
-  opacity: 0.55;
   cursor: default;
+  opacity: 0.55;
+}
+
+.sampleHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* The dot encodes the *kind* of outcome the sample demonstrates (pass, fail,
+   abstention, adversarial). It is decoration only — never the sole carrier of
+   that meaning, which is what `.sampleExpected` spells out in words. */
+.sampleDot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.dotOk {
+  background: var(--ok-fg);
+}
+.dotBad {
+  background: var(--bad-fg);
+}
+.dotWarn {
+  background: var(--warn-fg);
+}
+.dotNeutral {
+  background: var(--neutral-fg);
+}
+.dotAccent {
+  background: var(--accent);
 }
 
 .sampleLabel {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 650;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .sampleLoading {
-  font-size: 12px;
+  margin-left: 6px;
+  font-size: 11.5px;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--text-muted);
+  animation: v2pulse 1.2s ease-in-out infinite;
 }
 
 .sampleWhat {
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--text-muted);
   line-height: 1.4;
 }
 
 .sampleExpected {
-  font-size: 11.5px;
   font-family: var(--font-mono);
-  color: var(--text-faint);
-  line-height: 1.4;
+  font-size: 12px;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
-/* ---- loading ------------------------------------------------------------- */
+/* `margin-top: auto` pins the privacy note to the bottom of the rail, so it sits
+   opposite the footer in the canvas rather than floating under the samples. */
+.railNote {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.railNote strong {
+  color: var(--ink);
+}
+
+/* -------------------------------------------------------------- canvas ---- */
+
+.canvas {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 34px 38px 30px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.tagline {
+  font-size: 14.5px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-width: 64ch;
+}
+
+.fade {
+  animation: v2fade 0.28s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* ---------------------------------------------------------------- idle ---- */
+
+/* v1 had no idle state: the upload and sample cards *were* the page, so there was
+   nothing to hold. Once the inputs move to the rail the canvas is empty on first
+   paint, and an empty canvas has to say what will fill it. */
+.idle {
+  min-height: 380px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+}
+
+.idleGlyph {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-tile);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.idleTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.idleBody {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 38ch;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------- processing ---- */
+
+.processing {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  padding: 26px 28px;
+}
+
+.processingHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.processingPulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: v2pulse 1.2s ease-in-out infinite;
+}
+
+.processingTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The mockup hardcodes "est. 4.2s". Real elapsed time is already tracked to drive
+   the stage list, so it is shown instead — same slot, same treatment, but it is a
+   measurement rather than a promise the pipeline may not keep. */
+.processingClock {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 
 .stages {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 7px;
 }
 
 .stage {
   display: flex;
-  gap: 10px;
-  align-items: baseline;
-  font-size: 13.5px;
-  line-height: 1.4;
+  gap: 14px;
+  align-items: flex-start;
 }
 
-.stageGlyph {
+.stageMarker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   flex: 0 0 auto;
-  width: 1em;
-  font-size: 12px;
 }
 
-.stage_past {
-  color: var(--text-muted);
+.stageDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  display: block;
 }
 
-.stage_now {
-  color: var(--text);
-  font-weight: 650;
+.stageLine {
+  width: 2px;
+  flex: 1;
+  min-height: 22px;
+  background: var(--border);
 }
 
-.stage_next {
+/* The trailing connector on the last row would dangle into the note paragraph
+   below it, so it is suppressed — the only intentional deviation in this block. */
+.stage:last-child .stageLine {
+  display: none;
+}
+
+.stageLabel {
+  padding-bottom: 16px;
+  font-size: 14px;
+  line-height: 1.35;
   color: var(--text-faint);
 }
 
-.dots::after {
-  content: '…';
-  animation: ellipsis 1.2s steps(4, end) infinite;
+.stage:last-child .stageLabel {
+  padding-bottom: 4px;
 }
 
-@keyframes ellipsis {
-  0% {
-    content: '';
-  }
-  25% {
-    content: '.';
-  }
-  50% {
-    content: '..';
-  }
-  75% {
-    content: '...';
-  }
+/* Not yet reached. The resting appearance above already matches, but the state is
+   named explicitly so all three are declared in one place — and so the class
+   lookup in the component resolves rather than stringifying `undefined` into the
+   attribute. */
+.stage_next .stageDot {
+  border-color: var(--border);
+  background: transparent;
+}
+.stage_next .stageLine {
+  background: var(--border);
+}
+.stage_next .stageLabel {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.stage_past .stageDot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.stage_past .stageLine {
+  background: var(--accent);
+}
+.stage_past .stageLabel {
+  color: var(--ink);
+}
+
+.stage_now .stageDot {
+  border-color: var(--accent);
+}
+.stage_now .stageLine {
+  background: var(--accent);
+}
+.stage_now .stageLabel {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .stageNote {
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--text-faint);
-  line-height: 1.45;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
-/* ---- error --------------------------------------------------------------- */
+/* --------------------------------------------------------------- error ---- */
 
 .error {
-  background: var(--bad-bg);
   border: 1px solid var(--bad-border);
-  border-left: 6px solid var(--bad-fg);
-  border-radius: var(--radius);
-  padding: 15px 16px;
+  background: var(--bad-bg);
+  border-radius: 20px;
+  padding: 24px 26px;
 }
 
 .errorTitle {
-  font-size: 15px;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   color: var(--bad-fg);
-  margin-bottom: 5px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .errorBody {
-  font-size: 14px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin-top: 10px;
 }
 
 .retry {
-  margin-top: 12px;
-  min-height: 44px;
+  margin-top: 16px;
   padding: 10px 18px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-size: 14px;
+  background: var(--ink);
+  color: var(--app-bg);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
+  font-family: inherit;
 }
 
-.retry:hover {
-  background: var(--surface-2);
-}
-
-/* ---- footer -------------------------------------------------------------- */
+/* -------------------------------------------------------------- footer ---- */
 
 .footer {
   border-top: 1px solid var(--border);
-  padding-top: 14px;
+  padding-top: 16px;
+  margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--text-faint);
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
-@media (min-width: 620px) {
-  .samples {
+/* ---------------------------------------------------------- responsive ---- */
+
+/* Below this the rail and the canvas cannot both hold their content: 300px of
+   rail leaves the verdict hero under 600px, where the confidence ring and the
+   date collide. Stack instead — which is v1's layout, and the mockup's
+   `device: mobile` frame. */
+@media (max-width: 900px) {
+  .shell {
+    padding: 20px 12px 60px;
+  }
+
+  .frame {
+    max-width: 560px;
+    flex-direction: column;
+    border-radius: 34px;
+  }
+
+  .rail {
+    flex: 1;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 22px 18px;
+  }
+
+  .railNote {
+    margin-top: 0;
+  }
+
+  /* Two columns of samples is the mockup's mobile treatment: the labels are short
+     enough to pair, and it halves the scroll before the canvas. */
+  .sampleList {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .page {
-    padding: 36px 20px 64px;
+  .canvas {
+    padding: 24px 16px 26px;
+  }
+
+  .title {
+    font-size: 26px;
   }
 }
 
-@media (max-width: 420px) {
-  .card {
-    padding: 14px 12px;
+@media (max-width: 480px) {
+  .sampleList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .idle {
+    min-height: 300px;
+    padding: 36px 18px;
+  }
+
+  .processing {
+    padding: 20px 18px;
   }
 }

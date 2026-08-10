@@ -1,444 +1,539 @@
+/**
+ * The verdict panel, v2.
+ *
+ * Tone is plumbed as three custom properties set by one class on the hero
+ * (`--tone-fg` / `--tone-bg` / `--tone-border`) rather than as four parallel rule
+ * sets per element. That is what lets the confidence ring inherit the verdict's
+ * colour through `currentColor` in a single inline gradient, and it means adding a
+ * tone is one declaration rather than a dozen.
+ */
+
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
-
-/* ---- tones (each is always paired with a word + glyph in the markup) ------ */
 
 .tone_ok {
   --tone-fg: var(--ok-fg);
   --tone-bg: var(--ok-bg);
   --tone-border: var(--ok-border);
 }
-
 .tone_bad {
   --tone-fg: var(--bad-fg);
   --tone-bg: var(--bad-bg);
   --tone-border: var(--bad-border);
 }
-
 .tone_warn {
   --tone-fg: var(--warn-fg);
   --tone-bg: var(--warn-bg);
   --tone-border: var(--warn-border);
 }
-
 .tone_neutral {
   --tone-fg: var(--neutral-fg);
   --tone-bg: var(--neutral-bg);
   --tone-border: var(--neutral-border);
 }
 
-/* ---- (a) verdict --------------------------------------------------------- */
+/* ----------------------------------------------------------------- hero ---- */
 
-.verdict {
-  background: var(--tone-bg);
-  border: 1px solid var(--tone-border);
-  border-left: 6px solid var(--tone-fg);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-}
-
-.verdictLine {
+.hero {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 26px;
+  flex-wrap: wrap;
+  padding: 28px 32px;
+  border: 1px solid var(--tone-border);
+  background: var(--tone-bg);
+  border-radius: var(--radius-hero);
+}
+
+.heroMain {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.heroBadges {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+/* The routing decision, filled in the verdict's own colour. `--on-tone` flips
+   between white and near-black by scheme so this chip passes contrast in both. */
+.headlinePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--tone-fg);
+  color: var(--on-tone);
+}
+
+.decisionCode {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  background: var(--surface);
+}
+
+.decisionText {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.heroDate {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dateBig {
+  font-size: 46px;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  color: var(--ink);
+}
+
+.dateMeta {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.heroChips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 5px 11px;
+}
+
+/* ----------------------------------------------------- confidence ring ---- */
+
+.heroConfidence {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+}
+
+/* The gradient itself is set inline (it needs the measured fraction), and it
+   references `currentColor` — which this rule sets to the verdict tone. */
+.ring {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
   color: var(--tone-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.glyph {
-  font-size: 26px;
-  line-height: 1;
-  font-weight: 700;
+.ringInner {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
 }
 
-.verdictText {
-  font-size: clamp(28px, 9vw, 40px);
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
+.ringValue {
+  font-family: var(--font-mono);
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
-.verdictDetail {
-  margin-top: 8px;
-  font-size: 13px;
+.ringLabel {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.docLine {
-  margin-top: 2px;
-  font-size: 13px;
-  color: var(--text-muted);
+.tierPill {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
-/* ---- reason codes -------------------------------------------------------- */
+/* -------------------------------------------------------- reason codes ---- */
 
 .reasonsLoud,
 .reasonsQuiet {
-  border-radius: var(--radius);
-  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  padding: 18px 20px;
+}
+
+.reasonsLoud {
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+}
+
+.reasonsQuiet {
   border: 1px solid var(--border);
   background: var(--surface);
 }
 
-.reasonsLoud {
-  border-color: var(--warn-border);
-  background: var(--warn-bg);
-}
-
 .reasonsTitle {
-  font-size: 11.5px;
-  font-weight: 650;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin-bottom: 9px;
 }
 
 .reasonsLoud .reasonsTitle {
   color: var(--warn-fg);
 }
 
-.chips {
+.reasonsQuiet .reasonsTitle {
+  color: var(--text-muted);
+}
+
+.reasonList {
   list-style: none;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-top: 11px;
 }
 
-.chip {
+.reason {
+  flex: 1 1 250px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  padding: 10px 13px;
 }
 
-.chipText {
-  font-size: 14px;
-  font-weight: 550;
+.reasonText {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
   line-height: 1.35;
 }
 
-.chipCode {
+.reasonCode {
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
-/* ---- generic block ------------------------------------------------------- */
+/* ---------------------------------------------------------------- bento ---- */
 
-.block {
+.bento {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.card {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
   background: var(--surface);
-  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
 }
 
-.blockTitle {
+.eyebrow {
   font-size: 11.5px;
-  font-weight: 650;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--text-muted);
-  margin-bottom: 8px;
 }
-
-/* ---- (b) basis + rule ---------------------------------------------------- */
 
 .basis {
   display: flex;
   align-items: baseline;
+  gap: 10px;
   flex-wrap: wrap;
-  gap: 8px;
 }
 
 .basisName {
-  font-size: 18px;
-  font-weight: 650;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.codeChip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+  border-radius: 6px;
+  padding: 2px 7px;
 }
 
 .rule {
-  margin-top: 8px;
-  font-size: 14.5px;
-  line-height: 1.55;
-}
-
-/* ---- (c) the date -------------------------------------------------------- */
-
-.dateBig {
-  font-size: 22px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-.dateMeta {
-  margin-top: 3px;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text-muted);
 }
 
-.dateNull {
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.dateRaw {
-  margin-top: 8px;
-  padding-top: 8px;
+/* Provenance line — what was literally on the page, and under which clock. Ruled
+   off and set in mono because it is the audit trail, not prose. */
+.cardFoot {
+  margin-top: auto;
+  padding-top: 11px;
   border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
-/* ---- (d) confidence ------------------------------------------------------ */
-
-.confLine {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.confValue {
-  font-family: var(--font-mono);
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1;
-}
-
-.confVia {
+.evidenceLine {
   font-size: 13px;
   color: var(--text-muted);
 }
-
-.tierCode {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 650;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  border: 1px solid var(--border);
-}
-
-.meter {
-  margin-top: 10px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.meterFill {
-  height: 100%;
-  background: var(--tone-fg);
-}
-
-.tierNote {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-
-/* ---- (e) evidence -------------------------------------------------------- */
 
 .labelChip {
-  display: inline-block;
   font-family: var(--font-mono);
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
-  border-radius: var(--radius-sm);
-  padding: 1px 6px;
+  border-radius: 6px;
+  padding: 1px 7px;
 }
 
 .snippet {
-  margin-top: 10px;
-  padding: 9px 11px;
-  background: var(--surface-2);
+  padding: 11px 13px;
+  background: var(--surface-alt);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-inner);
   font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
 }
 
+/* The extracted value, inside the text it came from. */
 .mark {
-  background: var(--warn-bg);
-  color: var(--text);
-  border-bottom: 2px solid var(--warn-fg);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+  border-radius: 3px;
   padding: 0 2px;
-  font-weight: 700;
 }
 
-/* ---- collapsibles -------------------------------------------------------- */
+.regionNote {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------- details ---- */
 
 .details {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
   background: var(--surface);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  min-width: 0;
 }
 
 .summary {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 48px;
-  padding: 12px 16px;
-  font-size: 14.5px;
-  font-weight: 600;
+  padding: 16px 22px;
   cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
   list-style: none;
-  border-radius: var(--radius);
 }
 
+/* The native disclosure triangle is replaced by `<Chevron />`, which can be
+   positioned and coloured to match the rest of the design. */
 .summary::-webkit-details-marker {
   display: none;
 }
 
-.summary::before {
-  content: '▸';
-  color: var(--text-muted);
-  font-size: 12px;
+.chevron {
+  display: flex;
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
 }
 
-.details[open] > .summary::before {
-  content: '▾';
+.details[open] > .summary .chevron {
+  transform: rotate(0deg);
 }
 
 .summaryCount {
+  margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--text-muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.summaryAlert {
-  color: var(--warn-fg);
-  background: var(--warn-bg);
-  border-color: var(--warn-border);
+  background: var(--surface-alt);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
 }
 
 .detailsBody {
-  padding: 0 16px 16px;
+  padding: 4px 22px 18px;
   border-top: 1px solid var(--border);
-  padding-top: 14px;
 }
+
+.jsonCard .detailsBody {
+  padding: 4px 18px 18px;
+}
+
+.json {
+  max-height: 240px;
+  overflow: auto;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  padding: 13px;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------- facts ---- */
 
 .facts {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 5px;
+}
+
+.facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .facts dt {
-  font-size: 11px;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--text-muted);
+  font-weight: 600;
 }
 
 .facts dd {
   font-size: 13.5px;
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
-.timings,
+/* An integrity anomaly forces REVIEW regardless of confidence, so it is the one
+   fact in this block that must not read as neutral trivia. */
+.factAlert {
+  color: var(--bad-fg);
+  font-weight: 500;
+}
+
+.timings {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
 .requestId {
-  margin-top: 12px;
-  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-faint);
   overflow-wrap: anywhere;
 }
 
-.json {
-  max-height: 60vh;
-  overflow: auto;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  font-size: 11.5px;
-  line-height: 1.5;
-  white-space: pre;
-  -webkit-overflow-scrolling: touch;
-}
+/* ---------------------------------------------------------- responsive ---- */
 
-/* ---- shared -------------------------------------------------------------- */
-
-.code {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 5px;
-  overflow-wrap: anywhere;
-}
-
-.mono {
-  font-family: var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-.faint {
-  color: var(--text-faint);
-  font-style: italic;
-}
-
-@media (min-width: 560px) {
-  .facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 900px) {
+  .bento {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .chips {
+  .hero {
+    padding: 22px;
+    gap: 18px;
+  }
+
+  .dateBig {
+    font-size: 34px;
+  }
+
+  /* The ring stops being a sidecar and centres under the answer. */
+  .heroConfidence {
     flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .chip {
-    flex: 1 1 260px;
+    align-items: center;
+    gap: 14px;
   }
 }
 
-@media (max-width: 420px) {
-  .block,
-  .reasonsLoud,
-  .reasonsQuiet {
-    padding: 13px 12px;
+@media (max-width: 480px) {
+  .card {
+    padding: 16px 16px;
   }
 
-  .verdict {
-    padding: 14px 14px;
-  }
-
+  .summary,
   .detailsBody {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 16px;
+    padding-right: 16px;
   }
 
-  .summary {
-    padding: 12px;
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

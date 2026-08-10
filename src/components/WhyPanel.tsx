@@ -58,16 +58,24 @@ export interface WhyPanelProps {
  *    null date, and a panel that renders "no selection" as blank space makes the
  *    system's best behaviour look like a bug. Instead the claim block flips to
  *    "Nothing was selected — and that is the answer", with the basis and rule
- *    quoted as the justification.
+ *    quoted as the justification. The v2 mockup has no abstained variant of this
+ *    block — it only shows pass/fail/review — so the neutral-toned one below is
+ *    the design extended to the case it did not draw, not a departure from it.
  *
  * 5. **Survivors that were not chosen are their own group.** Two dates can both
  *    clear every hard constraint (a barcode expiry and its printed twin). Folding
  *    them in with eliminated candidates would imply a rejection that never
- *    happened, so they render in the "considered" tone with no reason attached.
+ *    happened, so they render as quiet chips with no reason attached.
  *
  * 6. **Colour is never load-bearing.** Every row carries a glyph and a word
  *    (✔ Selected / ✕ Ruled out / – Considered) as well as its tone, so the panel
  *    survives being read in greyscale or by a red/green-blind reviewer (WCAG 1.4.1).
+ *
+ * v2 changes the *shape* of all this and none of the argument: the claim becomes a
+ * tone-washed block rather than a bordered box with a definition list, and the
+ * "read as / label / role" facts move out of it — `raw` is on the basis card's
+ * provenance line, the label is in the evidence card, and the role is on the
+ * selected row of the inventory, so the claim can be just the claim.
  *
  * It takes the whole `ExtractionResponse` rather than a candidate list because the
  * justification for the *selection* lives in `validity` (basis, rule_applied) while
@@ -96,7 +104,9 @@ export default function WhyPanel({ result }: WhyPanelProps) {
     dates.length === 0
       ? 'Why there is no date'
       : selected
-        ? `Why this date, and not the other ${dates.length - 1}?`
+        ? dates.length === 1
+          ? 'Why this date?'
+          : `Why this date, and not the other ${dates.length - 1}?`
         : 'Why no date was selected';
 
   return (
@@ -106,12 +116,12 @@ export default function WhyPanel({ result }: WhyPanelProps) {
           {headline}
         </h3>
         <p className={styles.counts}>
-          {dates.length} date{dates.length === 1 ? '' : 's'} found
+          {dates.length} found
           {' · '}
           {selected ? '1 selected' : 'none selected'}
           {' · '}
           {eliminated.length} ruled out
-          {survivors.length > 0 ? ` · ${survivors.length} left standing` : ''}
+          {survivors.length > 0 ? ` · ${survivors.length} standing` : ''}
         </p>
       </header>
 
@@ -119,29 +129,11 @@ export default function WhyPanel({ result }: WhyPanelProps) {
       {selected ? (
         <div className={styles.claim}>
           <p className={styles.claimTop}>
-            <span className={`${styles.tag} ${styles.tagSelected}`}>✔ Selected</span>
+            <span className={styles.tag}>
+              <span aria-hidden="true">✔ </span>Selected
+            </span>
             <span className={styles.claimDate}>{selected.iso ?? selected.raw}</span>
           </p>
-          <dl className={styles.claimFacts}>
-            <div>
-              <dt>Read as</dt>
-              <dd className={styles.mono}>{selected.raw}</dd>
-            </div>
-            <div>
-              <dt>Label</dt>
-              <dd>
-                {selected.label_verbatim ? (
-                  <q className={styles.mono}>{selected.label_verbatim}</q>
-                ) : (
-                  <span className={styles.faint}>unlabelled on the document</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Role</dt>
-              <dd>{humanizeRole(selected.inferred_role)}</dd>
-            </div>
-          </dl>
           <p className={styles.claimRule}>
             <span className={styles.ruleLabel}>
               Kept because ({humanizeEnum(result.validity.basis)})
@@ -152,7 +144,9 @@ export default function WhyPanel({ result }: WhyPanelProps) {
       ) : (
         <div className={`${styles.claim} ${styles.claimAbstained}`}>
           <p className={styles.claimTop}>
-            <span className={`${styles.tag} ${styles.tagAbstained}`}>– No selection</span>
+            <span className={styles.tag}>
+              <span aria-hidden="true">– </span>No selection
+            </span>
             <span className={styles.claimDate}>
               {dates.length === 0
                 ? 'No dates on this document'
@@ -175,23 +169,20 @@ export default function WhyPanel({ result }: WhyPanelProps) {
 
       {/* What did the eliminating. */}
       {tally.length > 0 ? (
-        <>
-          <h4 className={styles.subheading}>Constraints that did the work</h4>
-          <ul className={styles.tally}>
-            {tally.map((entry) => (
-              <li key={entry.reason} className={styles.tallyChip}>
-                <span className={styles.tallyReason}>{entry.reason}</span>
-                <span className={styles.tallyCount}>
-                  ×{entry.count}
-                  <span className={styles.srOnly}>
-                    {' '}
-                    candidate{entry.count === 1 ? '' : 's'} eliminated
-                  </span>
+        <ul className={styles.tally}>
+          {tally.map((entry) => (
+            <li key={entry.reason} className={styles.tallyChip}>
+              <span className={styles.tallyReason}>{entry.reason}</span>
+              <b className={styles.tallyCount}>
+                ×{entry.count}
+                <span className={styles.srOnly}>
+                  {' '}
+                  candidate{entry.count === 1 ? '' : 's'} eliminated
                 </span>
-              </li>
-            ))}
-          </ul>
-        </>
+              </b>
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {/* The ruled-out candidates themselves. */}
@@ -201,25 +192,12 @@ export default function WhyPanel({ result }: WhyPanelProps) {
           <ul className={styles.list}>
             {visibleEliminated.map((date, index) => (
               <li key={`${date.raw}-${index}`} className={styles.row}>
-                <span className={`${styles.tag} ${styles.tagOut}`}>✕ Ruled out</span>
-                <span className={styles.rowBody}>
-                  <span className={styles.rowDate}>
-                    <s className={styles.mono}>{date.raw}</s>
-                    {date.iso && date.iso !== date.raw ? (
-                      <span className={styles.rowIso}>({date.iso})</span>
-                    ) : null}
-                  </span>
-                  <span className={styles.rowMeta}>
-                    {humanizeRole(date.inferred_role)}
-                    {date.label_verbatim ? (
-                      <>
-                        {' · labelled '}
-                        <q className={styles.mono}>{date.label_verbatim}</q>
-                      </>
-                    ) : null}
-                  </span>
-                  <span className={styles.rowReason}>{date.eliminated_by}</span>
+                <span className={styles.rowDate}>
+                  <span className={styles.srOnly}>Ruled out: </span>
+                  <s>{date.raw}</s>
                 </span>
+                <span className={styles.rowReason}>{date.eliminated_by}</span>
+                <span className={styles.rowRole}>{humanizeRole(date.inferred_role)}</span>
               </li>
             ))}
           </ul>
@@ -252,22 +230,15 @@ export default function WhyPanel({ result }: WhyPanelProps) {
           <h4 className={styles.subheading}>
             Survived every constraint, not used for the verdict
           </h4>
-          <ul className={styles.list}>
+          <ul className={styles.survivors}>
             {survivors.map((date, index) => (
-              <li key={`${date.raw}-survivor-${index}`} className={styles.row}>
-                <span className={`${styles.tag} ${styles.tagKept}`}>– Considered</span>
-                <span className={styles.rowBody}>
-                  <span className={styles.rowDate}>
-                    <span className={styles.mono}>{date.raw}</span>
-                    {date.iso && date.iso !== date.raw ? (
-                      <span className={styles.rowIso}>({date.iso})</span>
-                    ) : null}
-                  </span>
-                  <span className={styles.rowMeta}>
-                    {humanizeRole(date.inferred_role)}
-                    {' · confidence '}
-                    {date.confidence.toFixed(2)}
-                  </span>
+              <li key={`${date.raw}-survivor-${index}`} className={styles.survivor}>
+                <span className={styles.survivorDate}>
+                  <span className={styles.srOnly}>Considered: </span>
+                  {date.raw}
+                </span>
+                <span className={styles.survivorMeta}>
+                  {humanizeRole(date.inferred_role)} · {date.confidence.toFixed(2)}
                 </span>
               </li>
             ))}

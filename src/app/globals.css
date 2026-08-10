@@ -1,102 +1,138 @@
 /**
- * Global tokens and reset.
+ * Global tokens and reset — "KYC UI Redesign v2".
  *
- * §10 — "Deliberately plain. The output panel is the product." So this file is a
- * small, honest token set (colour, spacing, type scale) rather than a design
- * system. Everything else lives in co-located CSS Modules.
+ * The v2 design is an *application shell*: a single framed window, centred on a
+ * recessed page, with a fixed rail on the left and the verdict canvas on the
+ * right. That needs two background layers rather than one, which is the main
+ * reason this token set is larger than the one it replaces:
  *
- * Two rules the tokens exist to enforce:
+ *   --bg        the page *behind* the frame (near-black in dark, grey in light)
+ *   --app-bg    the frame's own fill
+ *   --surface   cards inside the frame
+ *   --surface-alt  recessed wells inside those cards
+ *
+ * Two rules carried over from v1, because they were right and the redesign does
+ * not change them:
  *   1. Every status colour ships as a triple (fg / bg / border) so a status can
  *      be rendered as a filled chip that still passes contrast in both schemes.
  *   2. Colour is never the only carrier of meaning (WCAG 1.4.1) — components
  *      pair each tone with a text label and a glyph. The tokens just make the
  *      pairing cheap.
+ *
+ * The mockup ships `theme` as a switchable prop with a dark default and a light
+ * option. Both palettes are ported verbatim below, but they are bound to
+ * `prefers-color-scheme` rather than to a control in the UI: the design's two
+ * themes map exactly onto the two states the OS already reports, and honouring
+ * that setting is an accessibility behaviour v1 had which is worth keeping.
  */
 
 :root {
   color-scheme: light dark;
 
-  /* Surfaces */
-  --bg: #f5f6f8;
+  /* Surfaces — light */
+  --bg: #e9e9ec;
+  --app-bg: #fbfbfc;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #dde1e7;
-  --border-strong: #c3cad4;
+  --surface-alt: #f4f4f6;
+  --border: #e6e6ea;
+  --border-strong: #cfd0d6;
 
   /* Text */
-  --text: #14171c;
-  --text-muted: #59626f;
-  --text-faint: #7c8593;
+  --ink: #0a0a0b;
+  --text-muted: #52586a;
+  --text-faint: #646a76;
 
-  /* Accent (interactive) */
-  --accent: #1c4fd8;
-  --accent-fg: #ffffff;
-  --accent-soft: #e8eeff;
+  /* Accent (interactive). `--accent-text` is a separate token from `--accent`
+     because the accent is a *fill* colour: at the sizes it is used as type
+     (11–12px mono pills on `--accent-soft`) it needs to be darkened to clear
+     WCAG AA, and the mockup's own logic does exactly this nudge at runtime. */
+  --accent: #4f5dff;
+  --accent-text: #3a44c7;
+  --accent-soft: #edeeff;
+  --accent-on: #ffffff;
+
+  /* Text on a filled status chip, whose background is a `*-fg` colour. */
+  --on-tone: #ffffff;
 
   /* Status: pass */
-  --ok-fg: #0c5c37;
-  --ok-bg: #e6f6ec;
-  --ok-border: #a9dcbe;
+  --ok-fg: #0b7a55;
+  --ok-bg: #e9f8f1;
+  --ok-border: #bce7d6;
 
   /* Status: fail */
-  --bad-fg: #96161c;
-  --bad-bg: #fdeaea;
-  --bad-border: #f0bcbc;
+  --bad-fg: #dc2b2b;
+  --bad-bg: #fdecec;
+  --bad-border: #f5c0c0;
 
   /* Status: review */
-  --warn-fg: #7a4a00;
-  --warn-bg: #fff4e0;
-  --warn-border: #eed3a1;
+  --warn-fg: #b45309;
+  --warn-bg: #fef4e4;
+  --warn-border: #f2dcb2;
 
   /* Status: not applicable / neutral */
-  --neutral-fg: #3c4552;
-  --neutral-bg: #eceff3;
-  --neutral-border: #d3d9e1;
+  --neutral-fg: #5a5f6b;
+  --neutral-bg: #f1f1f4;
+  --neutral-border: #e1e1e6;
 
-  /* Shape */
-  --radius: 10px;
-  --radius-sm: 6px;
-  --shadow: 0 1px 2px rgba(16, 22, 30, 0.06), 0 6px 16px rgba(16, 22, 30, 0.05);
+  /* Shape. The v2 language is a nested-radius one: the frame is the roundest
+     thing on screen and each level inside it steps down. */
+  --radius-frame: 26px;
+  --radius-hero: 22px;
+  --radius-card: 18px;
+  --radius-tile: 16px;
+  --radius-inner: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 99px;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
+  --frame-shadow: 0 30px 70px rgba(15, 18, 28, 0.12);
+
+  /* `--font-geist` / `--font-geist-mono` are injected by next/font in the root
+     layout. The stacks below name the mockup's fallbacks so the design still
+     reads correctly if a face fails to load. */
+  --font-sans: var(--font-geist), "Instrument Sans", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), "JetBrains Mono", ui-monospace,
+    SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0c0f13;
-    --surface: #14181e;
-    --surface-2: #1a1f26;
-    --border: #272e37;
-    --border-strong: #3a444f;
+    --bg: #000000;
+    --app-bg: #0a0b0e;
+    --surface: #111318;
+    --surface-alt: #171a20;
+    --border: #22252d;
+    --border-strong: #333844;
 
-    --text: #e9ecf1;
-    --text-muted: #a0aab7;
-    --text-faint: #808b99;
+    --ink: #f4f4f6;
+    --text-muted: #a8aebb;
+    --text-faint: #9aa0ac;
 
-    --accent: #7ea2ff;
-    --accent-fg: #0c0f13;
-    --accent-soft: #17203a;
+    --accent: #7c8bff;
+    --accent-text: #9aa6ff;
+    --accent-soft: #1a1e33;
+    --accent-on: #0a0b0e;
 
-    --ok-fg: #6fd8a0;
-    --ok-bg: #0f2419;
-    --ok-border: #225035;
+    /* Dark-scheme status colours are bright, so a filled chip needs dark type. */
+    --on-tone: #0a0b0e;
 
-    --bad-fg: #ff9a9a;
-    --bad-bg: #2a1315;
-    --bad-border: #5b2a2c;
+    --ok-fg: #3dd68c;
+    --ok-bg: #0d2019;
+    --ok-border: #1d4433;
 
-    --warn-fg: #f5c977;
-    --warn-bg: #2a2010;
-    --warn-border: #5a4520;
+    --bad-fg: #ff6b6b;
+    --bad-bg: #241213;
+    --bad-border: #4a2224;
 
-    --neutral-fg: #bcc5d0;
-    --neutral-bg: #1b2028;
-    --neutral-border: #303844;
+    --warn-fg: #fbbf24;
+    --warn-bg: #241d0c;
+    --warn-border: #4a3a12;
 
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.3);
+    --neutral-fg: #c0c5cf;
+    --neutral-bg: #16191f;
+    --neutral-border: #272b33;
+
+    --frame-shadow: 0 40px 90px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -123,7 +159,7 @@ body {
 body {
   min-height: 100%;
   background: var(--bg);
-  color: var(--text);
+  color: var(--ink);
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.5;
@@ -152,6 +188,29 @@ code,
 pre,
 kbd {
   font-family: var(--font-mono);
+}
+
+/* The v2 entrance: content fades up as each state swaps in. Scoped to a utility
+   class so only state containers animate, never every card on every render. */
+@keyframes v2fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes v2pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

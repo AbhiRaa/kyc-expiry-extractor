@@ -333,3 +333,101 @@ Blur and effective resolution are genuinely page-level properties and are unaffe
   `ReferenceError: DOMMatrix is not defined` at import.
 - The confidence weights are **hand-tuned**, not learned. A trained fusion is the
   productionization path — see the roadmap.
+
+## 7. UI redesign (v2)
+
+The `KYC UI Redesign v2.dc.html` Design Canvas mockup was implemented over the v1 UI. It
+is a mockup, not a spec: it carries preview scaffolding, and it draws three of the four
+states the real system can produce. These are the places the implementation departs from
+it, and why.
+
+### V1 — the mockup's control bar is not implemented
+
+The mockup opens with a sticky bar of tabs switching screen state (idle / processing /
+result / error), result variant (pass / fail / review), device and theme. Every one of
+those is driven by real state in the app.
+
+**Not shipped.** It is scaffolding for viewing the states side by side in the canvas. A
+build that let a viewer select "pass" from a dropdown would undercut the entire claim of
+the panel below it — that the verdict is derived, not chosen.
+
+### V2 — theme follows the OS rather than a toggle
+
+The mockup ships `theme` as a switchable prop defaulting to dark, with a light option.
+Both palettes are ported verbatim into `globals.css`.
+
+**Bound to `prefers-color-scheme`** instead of to a control. The design's two themes map
+exactly onto the two states the OS already reports, honouring that setting is an
+accessibility behaviour v1 had, and it costs no UI. Nothing about the palettes changed.
+
+### V3 — fonts are self-hosted, not fetched from Google
+
+The mockup loads Geist and Geist Mono via `<link>` from `fonts.googleapis.com`.
+
+**Changed to `next/font/google`**, which self-hosts both as static assets and emits no
+third-party request at page view. Faster (no render-blocking round trip, no layout shift)
+and consistent with §15: a page whose central claim is that nothing about the document
+leaves the browser should not open a connection to an ad network's font CDN to say so.
+
+### V4 — `T0` is not shown as capable of abstaining
+
+The mockup's pipeline rail computes each tier's state by index against the tier that
+resolved, which renders `T0` (normalize + classify) as "abstained" whenever anything
+downstream produced the answer.
+
+**Changed:** `T0`, `CE` and `RT` always render as "ran". None of the three can abstain —
+normalization and classification happen on every request, and the constraint engine and
+router run on whatever the tiers produced, including nothing.
+
+Related: the rail's per-step states are derived from `evidence.source_tier`, not measured,
+because `timing_ms` carries `{ total, normalize, tier }` and no key per tier. The routing
+is known exactly; per-tier durations are not, which is why the labels read "abstained" and
+"not needed" rather than quoting times they cannot support.
+
+### V5 — `source_tier: NONE` had to be drawn
+
+The mockup has pass, fail and review variants. It has no variant for the case where every
+tier abstains and the correct answer is no date — which is the employment-letter path, and
+the behaviour the system is most worth showing.
+
+**Extended:** all four tier tiles render "abstained" rather than collapsing to "not
+needed" (nothing was skipped — everything was tried), the hero reads `No date` with the
+null explained rather than left blank, and the why-panel's claim block flips to its
+neutral-toned "Nothing was selected — and that is the answer" variant. Neutral, not green
+and not red: an abstention is not a pass and not a failure.
+
+### V6 — collapsibles stay native `<details>`
+
+The mockup implements the date inventory and raw-JSON disclosures as a `<button>` toggling
+component state, with a chevron rotated by inline transform.
+
+**Kept as `<details>`/`<summary>`**, with the chevron rotated by CSS off `[open]`. Visually
+identical; keyboard operation and screen-reader announcement come free instead of being
+hand-rolled with ARIA.
+
+### V7 — the date inventory keeps the columns the mockup dropped
+
+v1 rendered the inventory as a six-column table (status, as read, normalized, label on
+document, role, confidence). The mockup's row design carries four fields and drops the
+normalized ISO, the verbatim label, and the eliminating constraint.
+
+**Adopted the row design; kept the data.** The three dropped fields moved to a second line
+that appears only on rows that have something to say, so a clean row is one line and a
+ruled-out row grows to carry its reason. Losing them outright would have been a regression
+in the one panel whose stated purpose is to be the complete record — a 40-page bank
+statement's transaction dates each need to state what removed them. A list replaced the
+`<table>` as a consequence: once rows are two lines of mixed-width content they are not
+tabular data, and table markup would promise alignment the layout does not keep.
+
+Also kept from v1 and absent from the mockup: the `Anomalies` fact (an integrity anomaly
+forces REVIEW regardless of confidence, so it cannot read as neutral trivia), the
+`Show N more ruled-out dates` truncation in the why-panel, and the quieter
+`Flags raised (N)` treatment for reason codes on a document that still cleared — a flag is
+real but is not a call to action.
+
+### V8 — the processing clock is measured, not promised
+
+The mockup's processing card shows a static `est. 4.2s`. Elapsed time is already tracked to
+drive the stage list, so it is shown instead — same slot, same treatment, but a measurement
+rather than an estimate the pipeline may not keep. The stage list itself remains explicitly
+labelled as estimated, as in v1.

@@ -51,6 +51,27 @@ export interface PreparedUpload {
 /** Thrown for anything the user needs to fix themselves. Message is user-facing. */
 export class UploadPrepError extends Error {}
 
+/** The v2 upload glyph: a tray with an arrow rising out of it. */
+function UploadIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 4v11M7.8 8.2L12 4l4.2 4.2"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 16v2.4A1.6 1.6 0 006.6 20h10.8a1.6 1.6 0 001.6-1.6V16"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 const ACCEPTED_PREFIXES = ['image/'];
 const ACCEPTED_EXACT = ['application/pdf'];
 /** Browsers sometimes hand us an empty `type` for HEIC from the iOS picker. */
@@ -356,8 +377,8 @@ export default function UploadZone({ onFile, onError, busy, preview }: UploadZon
             aria-describedby="upload-hint"
           >
             <span className={styles.empty}>
-              <span className={styles.icon} aria-hidden="true">
-                ⇪
+              <span className={styles.icon}>
+                <UploadIcon />
               </span>
               <span className={styles.title}>
                 {preparing ? 'Preparing…' : 'Upload a document'}

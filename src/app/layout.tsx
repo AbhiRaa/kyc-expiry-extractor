@@ -1,5 +1,32 @@
 import type { Metadata, Viewport } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
+
+/**
+ * The v2 design specifies Geist for prose and Geist Mono for every machine-
+ * readable value (dates, enums, reason codes, bboxes, JSON) — the typographic
+ * split *is* the argument that this UI keeps the contract visible next to the
+ * human string.
+ *
+ * The mockup loads both from `fonts.googleapis.com` with a `<link>`. Here they go
+ * through `next/font/google`, which self-hosts the files as static assets and
+ * emits no request to Google at page view. That is a performance win (no
+ * render-blocking third-party round trip, no layout shift) and, for this app in
+ * particular, a consistency one: a page whose central claim is "nothing about
+ * your document leaves your browser" should not open a connection to an ad
+ * network's font CDN to say so.
+ */
+const geist = Geist({
+  subsets: ['latin'],
+  variable: '--font-geist',
+  display: 'swap',
+});
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+});
 
 /**
  * Metadata only (§10 keeps the shell minimal).
@@ -22,7 +49,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
       <body>{children}</body>
     </html>
   );

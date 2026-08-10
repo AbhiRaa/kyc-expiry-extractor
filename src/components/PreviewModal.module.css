@@ -21,7 +21,7 @@
   padding: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-hero);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
@@ -32,8 +32,8 @@
   width: auto;
   height: auto;
   object-fit: contain;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  border-radius: var(--radius-inner);
+  background: var(--surface-alt);
 }
 
 .caption {
@@ -55,16 +55,16 @@
   justify-content: center;
   font-size: 15px;
   line-height: 1;
-  color: var(--text);
+  color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 999px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--frame-shadow);
   cursor: pointer;
 }
 
 .close:hover {
-  background: var(--surface-2);
+  background: var(--surface-alt);
 }
 
 .close:focus-visible {

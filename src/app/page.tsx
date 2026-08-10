@@ -14,7 +14,7 @@ import styles from './page.module.css';
 const ENDPOINT = '/api/extract';
 
 /**
- * Client-side abort. The pipeline budget is 25 s (contract `PIPELINE_BUDGET_MS`);
+ * Client-side abort. The pipeline budget is 45 s (contract `PIPELINE_BUDGET_MS`);
  * this sits above it so a server that is *working* is never killed by the client,
  * while a server that has genuinely gone away still produces a readable message
  * instead of a spinner that never stops.
@@ -43,6 +43,64 @@ const STAGES: readonly { key: string; label: string; atMs: number }[] = [
 ];
 
 type Status = 'idle' | 'busy' | 'done' | 'error';
+
+/** Tone class for a sample's status dot. */
+const SAMPLE_DOT: Record<SampleDoc['tone'], string> = {
+  ok: styles.dotOk,
+  bad: styles.dotBad,
+  warn: styles.dotWarn,
+  neutral: styles.dotNeutral,
+  accent: styles.dotAccent,
+};
+
+/* --------------------------------------------------------------------------
+ * Icons. Inline rather than an icon dependency: there are five of them in the
+ * whole app and each is a dozen bytes of path data, sized and stroked to match
+ * the v2 line weight (1.4–2.2px against a 24px viewBox).
+ * -------------------------------------------------------------------------- */
+
+function ShieldCheckIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9 12l2 2 4-4.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function AwaitingIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8.5 12h7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ErrorIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M9 9l6 6M15 9l-6 6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 /**
  * Turn anything a failed request produced into one readable sentence.
@@ -74,13 +132,26 @@ function looksLikeResponse(value: unknown): value is ExtractionResponse {
 }
 
 /**
- * The demo (§10). One upload surface, six sample documents, one output panel.
+ * The demo (§10), in the v2 shell: a persistent rail carrying every input, and a
+ * canvas carrying exactly one of four states — awaiting, processing, error,
+ * verdict.
  *
  * It is a client component in full: the page is a single interactive form whose
  * every byte of state (selected file, in-flight request, result) lives in the
  * browser, and there is nothing to render on the server. That is also the §15
  * position expressed structurally — the document is prepared in the browser,
  * POSTed once, and never persisted anywhere.
+ *
+ * What the v2 layout buys, beyond looking like a product: the inputs no longer
+ * scroll away under the result. v1 stacked upload → samples → verdict in one
+ * column, so firing the second sample meant scrolling back up past the whole
+ * output panel. Here the six samples stay put and only the canvas swaps.
+ *
+ * The mockup's sticky control bar (screen-state / variant / device / theme tabs)
+ * is deliberately not implemented. It is scaffolding for previewing the states
+ * side by side — every one of those tabs is driven by real state here, and a
+ * shipped build that let you fake a verdict would undercut the entire point of
+ * the panel underneath it.
  */
 export default function Home() {
   const [status, setStatus] = useState<Status>('idle');
@@ -89,7 +160,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [pendingSample, setPendingSample] = useState<string | null>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLElement>(null);
 
   const busy = status === 'busy';
 
@@ -102,10 +173,12 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [busy]);
 
-  // On a phone the result lands below the fold. Bring it into view once.
+  // On a phone the canvas sits below the rail, so a verdict lands off-screen.
+  // Bring it into view once. (On desktop the canvas is already beside the rail and
+  // this is a no-op scroll.)
   useEffect(() => {
-    if (status === 'done' && resultRef.current) {
-      resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (status === 'done' && canvasRef.current) {
+      canvasRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [status]);
 
@@ -256,119 +329,149 @@ export default function Home() {
   );
 
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.title}>KYC document expiry extraction</h1>
-        <p className={styles.tagline}>
-          Upload an identity or address document. The answer is not a date — it is a
-          verdict, the rule it was reached under, the evidence it was read from, and
-          the constraints that eliminated every other candidate.
-        </p>
-        <p className={styles.privacy}>
-          <span className={styles.privacyGlyph} aria-hidden="true">
-            ⛨
-          </span>
-          <span>
-            <strong>No documents are stored.</strong> Files are processed in memory and
-            discarded with the response; evidence crops are returned inline and expire
-            with it. Photos are downscaled and stripped of EXIF metadata in your browser
-            before upload.
-          </span>
-        </p>
-      </header>
+    <div className={styles.shell}>
+      <div className={styles.frame}>
+        {/* ---------------------------------------------------------- rail ---- */}
+        <aside className={styles.rail} aria-label="Document input">
+          <div className={styles.brand}>
+            <span className={styles.brandMark}>
+              <ShieldCheckIcon />
+            </span>
+            <span className={styles.brandText}>
+              <span className={styles.brandName}>Expiry extraction</span>
+              <span className={styles.brandSub}>KYC document verdicts</span>
+            </span>
+          </div>
 
-      <main className={styles.main}>
-        <section className={styles.card} aria-labelledby="upload-heading">
-          <h2 id="upload-heading" className={styles.sectionTitle}>
-            Try a document
-          </h2>
           <UploadZone onFile={onFile} onError={onUploadError} busy={busy} preview={prepared} />
-        </section>
 
-        <section className={styles.card} aria-labelledby="samples-heading">
-          <h2 id="samples-heading" className={styles.sectionTitle}>
-            Or load a sample in one tap
-          </h2>
-          <p className={styles.sectionNote}>
-            Six documents from the eval set, chosen to cover the deterministic path, a
-            correct failure, a correct abstention, class-specific validity rules, date
-            semantics, and an adversarial input.
-          </p>
-          <ul className={styles.samples}>
-            {SAMPLE_DOCS.map((doc) => (
-              <li key={doc.id}>
-                <button
-                  type="button"
-                  className={styles.sample}
-                  onClick={() => void loadSample(doc)}
-                  disabled={busy || pendingSample !== null}
-                >
-                  <span className={styles.sampleLabel}>
-                    {doc.label}
-                    {pendingSample === doc.id ? (
-                      <span className={styles.sampleLoading}>loading…</span>
-                    ) : null}
-                  </span>
-                  <span className={styles.sampleWhat}>{doc.demonstrates}</span>
-                  <span className={styles.sampleExpected}>Expected: {doc.expected}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {/* Loading state — the estimated pipeline walk. */}
-        {busy ? (
-          <section className={styles.card} aria-label="Processing">
-            <h2 className={styles.sectionTitle}>
-              Processing<span className={styles.dots} aria-hidden="true" />
-            </h2>
-            <ol className={styles.stages}>
-              {STAGES.map((stage, index) => {
-                const state =
-                  index < activeStage ? 'past' : index === activeStage ? 'now' : 'next';
-                return (
-                  <li key={stage.key} className={`${styles.stage} ${styles[`stage_${state}`]}`}>
-                    <span className={styles.stageGlyph} aria-hidden="true">
-                      {state === 'past' ? '✔' : state === 'now' ? '●' : '○'}
+          <div className={styles.samples}>
+            <h2 className={styles.eyebrow}>Or load a sample in one tap</h2>
+            <ul className={styles.sampleList}>
+              {SAMPLE_DOCS.map((doc) => (
+                <li key={doc.id}>
+                  <button
+                    type="button"
+                    className={styles.sample}
+                    onClick={() => void loadSample(doc)}
+                    disabled={busy || pendingSample !== null}
+                  >
+                    <span className={styles.sampleHead}>
+                      <span
+                        className={`${styles.sampleDot} ${SAMPLE_DOT[doc.tone]}`}
+                        aria-hidden="true"
+                      />
+                      <span className={styles.sampleLabel}>{doc.label}</span>
+                      {pendingSample === doc.id ? (
+                        <span className={styles.sampleLoading}>loading…</span>
+                      ) : null}
                     </span>
-                    <span>{stage.label}</span>
-                  </li>
-                );
-              })}
-            </ol>
-            <p className={styles.stageNote} role="status">
-              Stages are estimated — a single request is in flight. Real per-stage
-              timings are returned in the response and shown below when it lands.
+                    <span className={styles.sampleWhat}>{doc.demonstrates}</span>
+                    <span className={styles.sampleExpected}>{doc.expected}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className={styles.railNote}>
+            <strong>No documents are stored.</strong> Files are processed in memory and
+            discarded with the response; evidence is returned as coordinates, never as
+            pixels.
+          </p>
+        </aside>
+
+        {/* -------------------------------------------------------- canvas ---- */}
+        <main className={styles.canvas} ref={canvasRef}>
+          <header className={styles.header}>
+            <h1 className={styles.title}>KYC document expiry extraction</h1>
+            <p className={styles.tagline}>
+              Upload an identity or address document. The answer is not a date — it is a
+              verdict, the rule it was reached under, the evidence it was read from, and
+              the constraints that eliminated every other candidate.
             </p>
-          </section>
-        ) : null}
+          </header>
 
-        {/* Error state — one sentence, never a stack trace. */}
-        {status === 'error' && error ? (
-          <section className={styles.error} role="alert">
-            <h2 className={styles.errorTitle}>
-              <span aria-hidden="true">✕ </span>That did not work
-            </h2>
-            <p className={styles.errorBody}>{error}</p>
-            <button type="button" className={styles.retry} onClick={reset}>
-              Start over
-            </button>
-          </section>
-        ) : null}
+          {/* Awaiting input. */}
+          {status === 'idle' ? (
+            <div className={`${styles.idle} ${styles.fade}`}>
+              <span className={styles.idleGlyph}>
+                <AwaitingIcon />
+              </span>
+              <p className={styles.idleTitle}>Your verdict will appear here</p>
+              <p className={styles.idleBody}>
+                Every tier can abstain. Nothing is answered on a low-confidence guess.
+              </p>
+            </div>
+          ) : null}
 
-        <div ref={resultRef}>
-          {status === 'done' && result ? <ResultPanel result={result} /> : null}
-        </div>
-      </main>
+          {/* Loading state — the estimated pipeline walk. */}
+          {busy ? (
+            <section
+              className={`${styles.processing} ${styles.fade}`}
+              aria-label="Processing"
+            >
+              <div className={styles.processingHead}>
+                <span className={styles.processingPulse} aria-hidden="true" />
+                <h2 className={styles.processingTitle}>Processing</h2>
+                <span className={styles.processingClock}>
+                  {(elapsed / 1000).toFixed(1)}s elapsed
+                </span>
+              </div>
+              <ol className={styles.stages}>
+                {STAGES.map((stage, index) => {
+                  const state =
+                    index < activeStage ? 'past' : index === activeStage ? 'now' : 'next';
+                  return (
+                    <li
+                      key={stage.key}
+                      className={`${styles.stage} ${styles[`stage_${state}`]}`}
+                    >
+                      <span className={styles.stageMarker} aria-hidden="true">
+                        <span className={styles.stageDot} />
+                        <span className={styles.stageLine} />
+                      </span>
+                      <span className={styles.stageLabel}>{stage.label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+              <p className={styles.stageNote} role="status">
+                Stages are estimated — a single request is in flight. Real per-stage
+                timings are returned in the response and shown below when it lands.
+              </p>
+            </section>
+          ) : null}
 
-      <footer className={styles.footer}>
-        <p>
-          Verdicts are advisory and evaluated in UTC, end-of-day inclusive. Every
-          abstention carries machine-readable reason codes rather than a guessed date.
-        </p>
-        <p>No documents are stored. Nothing on this page outlives the response.</p>
-      </footer>
+          {/* Error state — one sentence, never a stack trace. */}
+          {status === 'error' && error ? (
+            <section className={`${styles.error} ${styles.fade}`} role="alert">
+              <h2 className={styles.errorTitle}>
+                <ErrorIcon />
+                That did not work
+              </h2>
+              <p className={styles.errorBody}>{error}</p>
+              <button type="button" className={styles.retry} onClick={reset}>
+                Start over
+              </button>
+            </section>
+          ) : null}
+
+          {status === 'done' && result ? (
+            <div className={styles.fade}>
+              <ResultPanel result={result} />
+            </div>
+          ) : null}
+
+          <footer className={styles.footer}>
+            <p>
+              Verdicts are advisory and evaluated in UTC, end-of-day inclusive. Every
+              abstention carries machine-readable reason codes rather than a guessed date.
+            </p>
+            <p>No documents are stored. Nothing on this page outlives the response.</p>
+          </footer>
+        </main>
+      </div>
     </div>
   );
 }
