@@ -25,10 +25,12 @@ capacity, a lower bar buys throughput; if it is saturated, the bar should go hig
 **2. Is the document class known at upload time from the user's selection, or must it be inferred?**
 
 This changes the architecture more than any other answer. Class determines the validity
-*rule* — expiry vs recency window vs no expiry — and a misclassification currently
-propagates into a wrong basis even when the date is extracted perfectly (two of the four
-known misses are exactly this). If the user picks "passport" at upload, that whole failure
-mode disappears and the classification tier can be deleted rather than improved.
+*rule* — expiry vs recency window vs no expiry — and a misclassification can still
+propagate into a wrong basis even when the date is extracted perfectly (see
+`docs/EDGE_CASES.md`'s "Known misses" for the shape of that failure, even though the
+specific cases once listed there are now fixed). If the user picks "passport" at upload,
+that whole failure mode disappears and the classification tier can be deleted rather than
+improved.
 
 **3. Is the input always a single document per submission?**
 
