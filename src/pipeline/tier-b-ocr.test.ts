@@ -29,6 +29,7 @@ import {
   RIGHT_MAX_DX_RATIO,
   TB_MAX_CONFIDENCE,
   dateShapeStrength,
+  estimateMachineReadableZone,
   extractFromOcrPage,
   extractTierBOcr,
   findDateTokens,
@@ -593,6 +594,59 @@ describe('line reconstruction for TA-MRZ (single OCR pass)', () => {
       'VALID THRU',
       '03/14/2029',
     ]);
+  });
+
+  it('estimateMachineReadableZone anchors on the band and extends upward, not downward', () => {
+    const lines = reconstructLines(bandPage());
+    const zone = estimateMachineReadableZone(lines);
+
+    expect(zone).not.toBeNull();
+    const [x0, y0, x1, y1] = zone!;
+    // The band's own tokens run most of the page's width (this fixture's chunked layout
+    // starts at x=80 of 1400px and does not quite reach the right edge).
+    expect(x0).toBeLessThan(0.1);
+    expect(x1).toBeGreaterThan(0.75);
+    // The whole point: extend well above the band (a book-spread's other page sits above
+    // the real one), but not meaningfully past the band's own bottom edge.
+    expect(y0).toBeLessThan(0.3);
+    expect(y1).toBeGreaterThan(0.9);
+    expect(y1).toBeLessThanOrEqual(1);
+    for (const coordinate of zone!) {
+      expect(coordinate).toBeGreaterThanOrEqual(0);
+      expect(coordinate).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('estimateMachineReadableZone (crop-toward-the-document for TC)', () => {
+  it('returns null for an ordinary document with no MRZ-like line', () => {
+    const lines = reconstructLines({
+      tokens: [
+        { text: 'EXPIRES', box: { x0: 80, y0: 60, x1: 220, y1: 100 }, confidence: 94, line: 0 },
+        { text: '04/23/2030', box: { x0: 240, y0: 60, x1: 420, y1: 100 }, confidence: 94, line: 0 },
+      ],
+      width: 800,
+      height: 400,
+      meanConfidence: 90,
+    });
+
+    expect(estimateMachineReadableZone(lines)).toBeNull();
+  });
+
+  it('is not fooled by a short, coincidentally alphabet-heavy label', () => {
+    const lines = reconstructLines({
+      tokens: [
+        // Uppercase, digits and no lowercase — passes a naive alphabet check — but far
+        // short of a real band's length, which is exactly the false-positive case
+        // MIN_ZONE_LINE_CHARS exists to reject.
+        { text: 'DL0A12X9', box: { x0: 80, y0: 60, x1: 220, y1: 100 }, confidence: 94, line: 0 },
+      ],
+      width: 800,
+      height: 400,
+      meanConfidence: 90,
+    });
+
+    expect(estimateMachineReadableZone(lines)).toBeNull();
   });
 });
 

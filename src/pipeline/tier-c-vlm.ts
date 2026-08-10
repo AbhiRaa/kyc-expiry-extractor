@@ -117,11 +117,22 @@ export const ILLEGIBLE_PENALTY = 0.5;
  */
 export const ESTIMATED_DUAL_CALL_COST_USD = 0.08;
 
-/** Wall-clock cap for the whole tier, inside the 25 s pipeline budget (§11.6 #72). */
-export const DEFAULT_TIME_BUDGET_MS = 12_000;
+/**
+ * Wall-clock cap for the whole tier, inside the pipeline budget (§11.6 #72). The router
+ * always overrides this with whatever remains of `PIPELINE_BUDGET_MS` in production; this
+ * default only matters for direct/test callers. Raised alongside `PIPELINE_BUDGET_MS` —
+ * 12s was sized for the synthetic corpus's small, single-purpose images, not a dense
+ * real-world scan.
+ */
+export const DEFAULT_TIME_BUDGET_MS = 25_000;
 
-/** Per-call transport timeout, deliberately looser than the tier budget above. */
-export const DEFAULT_CALL_TIMEOUT_MS = 10_000;
+/**
+ * Per-call transport timeout. This one DOES bind in production (the router does not
+ * override it) — a single Hunter or Mapper call generating a full structured response
+ * over a large, dense image can genuinely need more than 10s, and hitting this ceiling
+ * mid-generation is indistinguishable from the model actually failing.
+ */
+export const DEFAULT_CALL_TIMEOUT_MS = 20_000;
 
 /** First (and only) backoff step for a 429 (§11.6 #73). */
 export const RATE_LIMIT_BACKOFF_BASE_MS = 500;

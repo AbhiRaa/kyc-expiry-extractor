@@ -41,13 +41,20 @@ import {
   evaluateValidity,
   hasExplicitNonExpiringLabel,
 } from '@/engine/validity';
-import { isNormalized, type NormalizeOutcome, rejectionToTierResult } from './normalize';
+import {
+  cropAndDownscale,
+  DOWNSCALE_LONG_EDGE,
+  isNormalized,
+  type NormalizeOutcome,
+  rejectionToTierResult,
+} from './normalize';
 import { classifyDocument } from './classify';
 import { extractMrz } from './tier-a-mrz';
 import { extractFromAamvaPayload, extractPdf417 } from './tier-a-pdf417';
 import { crossCheck, type DateTriple } from './cross-check';
 import {
   defaultOcrRunner,
+  estimateMachineReadableZone,
   extractTierBOcr,
   type OcrPage,
   type OcrRunner,
@@ -169,11 +176,8 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
   }
 
   // --- TA-MRZ, off the same OCR result -------------------------------------
-  const mrzSource = ocrPage
-    ? reconstructLines(ocrPage)
-    : page.textLayer
-      ? page.textLayer.split('\n')
-      : null;
+  const ocrLines = ocrPage ? reconstructLines(ocrPage) : null;
+  const mrzSource = ocrLines ?? (page.textLayer ? page.textLayer.split('\n') : null);
   const mrzResult = mrzSource ? safely(() => extractMrz({ source: mrzSource, today })) : null;
   const mrzOk = Boolean(mrzResult && !mrzResult.abstained);
 
@@ -226,8 +230,19 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
   let tcResult: TierResult | null = null;
   const needVlm = !deterministicWon && (!tbResult || tbResult.abstained);
   if (needVlm && input.vlmClient && withinBudget(started, budgetMs, 9000)) {
+    // A phone-scanned "book spread" of an open passport routinely captures a second,
+    // unrelated page above the bio-data page in the same shot — TC attending to the whole
+    // cluttered composite reads worse than TC attending to a focused crop of the document
+    // itself. Crop toward the machine-readable band when OCR found a hint of one; every
+    // non-identity document class has no such hint, so this is a no-op for the rest of the
+    // corpus. Cropping from the full-resolution buffer (not the already-downscaled one)
+    // means more effective pixels on the part that matters, not just a smaller field of view.
+    const zone = ocrLines ? estimateMachineReadableZone(ocrLines) : null;
+    const vlmImageBuffer = zone
+      ? await cropAndDownscale(page.fullResolution, zone, DOWNSCALE_LONG_EDGE).catch(() => page.downscaled)
+      : page.downscaled;
     tcResult = await runTierCVlm(input.vlmClient, {
-      image: { base64: page.downscaled.toString('base64'), mediaType: 'image/jpeg' },
+      image: { base64: vlmImageBuffer.toString('base64'), mediaType: 'image/jpeg' },
       documentClass,
       issuerConvention: inferIssuerConvention(classification.issuer),
       today,
@@ -414,10 +429,25 @@ function dateTripleOf(result: TierResult): DateTriple {
   return { expiry: byRole('EXPIRY'), issue: byRole('ISSUE'), dob: byRole('DATE_OF_BIRTH') };
 }
 
-/** US-issued documents read MM/DD; everything else is left unresolved rather than guessed. */
+/**
+ * US-issued documents read MM/DD; everything else genuinely identified reads DD/MM, which
+ * is the convention nearly every other passport- and ID-issuing country uses.
+ *
+ * The type signature always promised `'DMY'` as a possible result, but no code path here
+ * ever produced it — every non-US issuer fell through to `null` ("unresolved"), identical
+ * to a genuinely unknown one. Found on a real Indian passport where TC correctly read all
+ * five dates and their roles; every single one was then discarded as `AMBIGUOUS_DATE_FORMAT`
+ * because this function could not tell "identified as India" apart from "issuer unknown".
+ * A short, structured issuer string (a classified document's own issuer field) naming a
+ * non-US place now resolves to DMY. A long blob (e.g. a whole page's text layer, passed at
+ * the TB call site below) is not a clean issuer signal, so it still falls through to null
+ * rather than guessing a convention from incidental words in unrelated body text.
+ */
 function inferIssuerConvention(issuer: string | null): 'US' | 'DMY' | null {
   if (!issuer) return null;
-  if (issuer === 'USA' || /^[A-Z]{2}$/.test(issuer)) return 'US';
+  const upper = issuer.toUpperCase();
+  if (upper === 'USA' || /^[A-Z]{2}$/.test(issuer) || /\bUNITED STATES\b/.test(upper)) return 'US';
+  if (upper.length <= 60 && /[A-Z]/.test(upper)) return 'DMY';
   return null;
 }
 

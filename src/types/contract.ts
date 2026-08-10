@@ -346,5 +346,13 @@ export const REVIEW_FLOOR = 0.7;
  *  check digits, so a clean decode is self-validating. */
 export const DETERMINISTIC_CONFIDENCE = 0.99;
 
-/** Hard ceiling on the whole pipeline, well inside the platform function limit. */
-export const PIPELINE_BUDGET_MS = 25_000;
+/**
+ * Hard ceiling on the whole pipeline, well inside the platform function limit
+ * (`maxDuration = 60` in the extract route). Originally 25s, tuned against the synthetic
+ * eval corpus's small, single-purpose images. Real-world scans are bigger and denser —
+ * measured 22-27s end to end against real dense multi-page passport PDFs at full
+ * rasterization DPI — so 25s left the tier that matters most on the hardest documents
+ * (TC, the last resort once TA/TB have both abstained) with too little room. Raised to
+ * leave real headroom under the platform ceiling rather than routinely brushing it.
+ */
+export const PIPELINE_BUDGET_MS = 45_000;

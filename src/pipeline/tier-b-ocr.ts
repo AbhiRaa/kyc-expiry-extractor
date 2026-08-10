@@ -62,8 +62,10 @@ import {
   type FreeTextOptions,
   type NormalizedDate,
 } from '@/engine/dates';
-// Type-only: TB owes TA-MRZ a line shape it can consume directly (see `reconstructLines`).
-import type { OcrLine } from '@/pipeline/tier-a-mrz';
+// TB owes TA-MRZ a line shape it can consume directly (see `reconstructLines`), and reuses
+// its MRZ-density heuristic and exact line widths for TC's crop-toward-the-document logic
+// below.
+import { mrzAlphabetRatio, MRZ_LINE_LENGTHS, type OcrLine } from '@/pipeline/tier-a-mrz';
 import {
   FORWARD_LOOKING_QUALIFIERS,
   MAX_LABEL_WORDS,
@@ -1095,6 +1097,65 @@ export function reconstructLines(page: OcrPage): OcrLine[] {
       .join(' '),
     bbox: toNormalizedBBox(row.box, page.width, page.height),
   }));
+}
+
+/**
+ * A candidate line's length must be one of the three exact ICAO widths, not merely "long
+ * enough" — measured directly against real scans: a `>= 20 chars, mostly alphanumeric`
+ * bound is not a rare shape. A passport photo page's guilloche security pattern routinely
+ * gets OCR'd as dense alphanumeric-looking garbage by an engine not built to ignore it, and
+ * a loose length bound matched TEN such false positives spread across an entire real scan,
+ * unioning into a crop that was the whole page — a silent no-op with none of the intended
+ * effect. Exact-width matching is the same standard `detectMrzBand` itself requires; this
+ * function only relaxes the *ratio* bar below, not the width.
+ */
+const MIN_ZONE_ALPHABET_RATIO = 0.93;
+/** How far above the detected band to extend the crop, as a multiple of the page height —
+ *  covers a phone-scanned "book spread" where the actual document is the bottom half of a
+ *  taller composite image and the band sits at that document's own bottom edge. */
+const ZONE_UPWARD_MARGIN_RATIO = 0.55;
+/** Small padding below/beside the band itself, so its own text isn't cropped flush. */
+const ZONE_PADDING_RATIO = 0.03;
+
+/**
+ * Estimate where an identity document's dense, monospace machine-readable band sits on the
+ * page, from OCR line positions alone — independent of whether MRZ parsing itself succeeds
+ * (`detectMrzBand` needs an exact-width, checksummable band; this only needs a hint).
+ *
+ * Exists to crop TC's input toward the actual document when the page contains a lot that
+ * is not the document: a phone-scanned "book spread" of an open passport routinely photographs
+ * a second, unrelated page (a blank visa page, stamps) above the bio-data page in the very
+ * same shot, and TC attending to a huge, cluttered composite image reads worse than TC
+ * attending to a focused crop of just the part that matters. Returns `null` whenever nothing
+ * MRZ-shaped is present — which is every non-identity document class — so this is a no-op
+ * everywhere except the one case it exists for.
+ */
+export function estimateMachineReadableZone(lines: readonly OcrLine[]): BBox | null {
+  const candidates = lines.filter((line) => {
+    const compact = line.text.replace(/\s/g, '');
+    return (
+      line.bbox != null &&
+      MRZ_LINE_LENGTHS.has(compact.length) &&
+      mrzAlphabetRatio(compact) >= MIN_ZONE_ALPHABET_RATIO
+    );
+  });
+  if (candidates.length === 0) return null;
+
+  let [x0, y0, x1, y1] = candidates[0].bbox as BBox;
+  for (const line of candidates.slice(1)) {
+    const [bx0, by0, bx1, by1] = line.bbox as BBox;
+    x0 = Math.min(x0, bx0);
+    y0 = Math.min(y0, by0);
+    x1 = Math.max(x1, bx1);
+    y1 = Math.max(y1, by1);
+  }
+
+  return [
+    Math.max(0, x0 - ZONE_PADDING_RATIO),
+    Math.max(0, y0 - ZONE_UPWARD_MARGIN_RATIO),
+    Math.min(1, x1 + ZONE_PADDING_RATIO),
+    Math.min(1, y1 + ZONE_PADDING_RATIO),
+  ];
 }
 
 export interface TierBInput extends TierBOptions {

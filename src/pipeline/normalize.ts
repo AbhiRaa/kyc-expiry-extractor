@@ -49,7 +49,13 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
-import { abstain, type QualityMetrics, type ReasonCode, type TierResult } from '@/types/contract';
+import {
+  abstain,
+  type BBox,
+  type QualityMetrics,
+  type ReasonCode,
+  type TierResult,
+} from '@/types/contract';
 
 // ---------------------------------------------------------------------------
 // Tunables. Exported so the eval harness can sweep them rather than guess them.
@@ -1245,6 +1251,34 @@ async function finishPage(
     quality,
     reasonCodes,
   };
+}
+
+/**
+ * Crop the full-resolution page to a normalized region, then downscale that crop the same
+ * way `finishPage` downscales the whole page. Used to give TC a focused view of the actual
+ * document instead of a large, cluttered scan (see `estimateMachineReadableZone` in
+ * tier-b-ocr.ts) — cropping BEFORE downscaling matters, not after: the point is more
+ * effective pixels on the part that matters, not just a smaller field of view at the same
+ * detail the full-page downscale already had.
+ */
+export async function cropAndDownscale(
+  fullResolution: Buffer,
+  box: BBox,
+  longEdge: number,
+): Promise<Buffer> {
+  const { width, height } = await sharp(fullResolution).metadata();
+  if (!width || !height) return fullResolution;
+
+  const [x0, y0, x1, y1] = box;
+  const left = Math.max(0, Math.round(x0 * width));
+  const top = Math.max(0, Math.round(y0 * height));
+  const cropWidth = Math.min(width - left, Math.round((x1 - x0) * width));
+  const cropHeight = Math.min(height - top, Math.round((y1 - y0) * height));
+  if (cropWidth <= 0 || cropHeight <= 0) return fullResolution;
+
+  const cropped = sharp(fullResolution).extract({ left, top, width: cropWidth, height: cropHeight });
+  const resized = cropped.resize({ width: longEdge, height: longEdge, fit: 'inside', withoutEnlargement: true });
+  return resized.jpeg({ quality: 85 }).toBuffer();
 }
 
 /**

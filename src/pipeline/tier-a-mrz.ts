@@ -96,6 +96,14 @@ const LAYOUTS: ReadonlyArray<{ format: MrzFormat; lineLength: number; lineCount:
   { format: 'TD3', lineLength: 44, lineCount: 2 },
 ];
 
+/**
+ * The three valid ICAO line widths, exported so a caller that only needs "is this length
+ * MRZ-shaped" (the crop-toward-the-document heuristic in tier-b-ocr.ts) can check against
+ * exactly what `detectMrzBand` itself requires, rather than a looser standalone bound that
+ * can drift from it.
+ */
+export const MRZ_LINE_LENGTHS: ReadonlySet<number> = new Set(LAYOUTS.map((l) => l.lineLength));
+
 export interface MrzBand {
   format: MrzFormat;
   /** Sanitized, fixed-width lines, ready for fixed-offset parsing. */
@@ -143,8 +151,12 @@ export function sanitizeMrzLine(raw: string): string {
     .replace(/[^A-Z0-9<]/g, '');
 }
 
-/** Share of characters already in the MRZ alphabet — a cheap "is this a band?" score. */
-function mrzAlphabetRatio(raw: string): number {
+/**
+ * Share of characters already in the MRZ alphabet — a cheap "is this a band?" score.
+ * Exported so TC's image-cropping heuristic (tier-b-ocr.ts) can reuse the same density
+ * bar rather than inventing a second one that could silently drift from this one.
+ */
+export function mrzAlphabetRatio(raw: string): number {
   const compact = raw.replace(/\s/g, '');
   if (compact.length === 0) return 0;
   let inSet = 0;
