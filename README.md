@@ -317,7 +317,7 @@ Stated as conscious exclusions, not oversights.
 
 Under five minutes from a cold start. **No API key is needed** for anything except the TC
 dual-VLM tier — the deterministic tiers, OCR tier, constraint engine, routing, UI and the
-entire 299-test suite all run without one.
+entire 309-test suite all run without one.
 
 ### Requirements
 
@@ -357,7 +357,7 @@ refuses to pick any of its 15 dates.
 ### Verifying it
 
 ```bash
-npm test                # 299 unit tests. No network, no API key. ~6 s.
+npm test                # 309 unit tests. No network, no API key. ~7 s.
 npm run eval            # full pipeline over all 25 documents -> eval/results.md
 npm run build           # production build
 ```
