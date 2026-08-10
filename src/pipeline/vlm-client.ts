@@ -41,8 +41,15 @@ import Anthropic, {
 // Call settings (§7)
 // ---------------------------------------------------------------------------
 
-/** Exact model id — no date suffix. */
-export const VLM_MODEL = 'claude-opus-5';
+/**
+ * Exact model id — no date suffix. Overridable via `ANTHROPIC_VLM_MODEL` so the model
+ * comparison (accuracy-at-coverage AND cost, side by side) is a rerun, not a code change —
+ * `ANTHROPIC_VLM_MODEL=claude-sonnet-5 npm run eval`. TC is deliberately the last-resort
+ * tier and stays cheap in absolute terms either way (it only ever runs on the ~25-30% of
+ * documents the deterministic/OCR tiers already gave up on), so the honest way to answer
+ * "is a cheaper model worth it" is to measure it on this corpus rather than assume.
+ */
+export const VLM_MODEL = process.env.ANTHROPIC_VLM_MODEL ?? 'claude-opus-5';
 
 /**
  * Both schemas are small (Hunter is four scalar fields; Mapper is a short array of them),
@@ -56,18 +63,50 @@ export const VLM_MAX_TOKENS = 4000;
 export const VLM_EFFORT = 'low' as const;
 
 // ---------------------------------------------------------------------------
-// Pricing (§ tier cost profile). claude-opus-5, USD per million tokens.
+// Pricing (§ tier cost profile). USD per million tokens, published rates (not the
+// time-limited Sonnet 5 intro price — the durable rate is the honest one for comparing
+// tiers). Cache write/read bill at 1.25x / 0.1x of input uniformly across models, so
+// those are derived rather than duplicated per entry.
 // ---------------------------------------------------------------------------
 
-export const PRICE_PER_MTOK = {
-  /** Uncached input. */
-  input: 5.0,
-  output: 25.0,
-  /** Cache writes bill at 1.25x input. */
-  cacheWrite: 6.25,
-  /** Cache reads bill at 0.1x input. */
-  cacheRead: 0.5,
-} as const;
+const BASE_PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
+  'claude-opus-5': { input: 5.0, output: 25.0 },
+  'claude-sonnet-5': { input: 3.0, output: 15.0 },
+  'claude-haiku-4-5': { input: 1.0, output: 5.0 },
+};
+const CACHE_WRITE_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
+
+function priceFor(model: string): {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+} {
+  const base = BASE_PRICE_PER_MTOK[model];
+  if (!base) {
+    // Fail loudly rather than silently mispricing: cost_usd is documented everywhere in
+    // this codebase as "never an estimate", so a model with no published rate here must
+    // not produce a number at all.
+    throw new Error(
+      `No published pricing for model "${model}". Add it to BASE_PRICE_PER_MTOK in ` +
+        `vlm-client.ts before using it as ANTHROPIC_VLM_MODEL.`,
+    );
+  }
+  return {
+    input: base.input,
+    output: base.output,
+    cacheWrite: base.input * CACHE_WRITE_MULTIPLIER,
+    cacheRead: base.input * CACHE_READ_MULTIPLIER,
+  };
+}
+
+/**
+ * claude-opus-5's own published rate specifically — fixed, not tied to `VLM_MODEL` (which
+ * `ANTHROPIC_VLM_MODEL` can override), so this constant and the tests pinned to it stay
+ * correct regardless of which model a given run is actually configured for.
+ */
+export const PRICE_PER_MTOK = priceFor('claude-opus-5');
 
 const PER_TOKEN = 1_000_000;
 
@@ -217,13 +256,19 @@ function retryAfterFromHeaders(headers: unknown): number | undefined {
  * to come from `usage` rather than a per-call constant — a document that trips the
  * high-resolution image path costs several times one that doesn't, and averaging that away
  * would hide the single biggest cost lever TC has.
+ *
+ * `model` defaults to claude-opus-5 specifically (not the possibly-overridden `VLM_MODEL`)
+ * so this function's default behavior — and the tests pinned to it — never depends on
+ * whatever `ANTHROPIC_VLM_MODEL` happens to be set to in the calling environment. Real
+ * calls (see `complete()` below) always pass the client's own configured model explicitly.
  */
-export function computeCostUsd(usage: VlmUsage): number {
+export function computeCostUsd(usage: VlmUsage, model: string = 'claude-opus-5'): number {
+  const price = priceFor(model);
   return (
-    (usage.inputTokens * PRICE_PER_MTOK.input +
-      usage.outputTokens * PRICE_PER_MTOK.output +
-      usage.cacheCreationInputTokens * PRICE_PER_MTOK.cacheWrite +
-      usage.cacheReadInputTokens * PRICE_PER_MTOK.cacheRead) /
+    (usage.inputTokens * price.input +
+      usage.outputTokens * price.output +
+      usage.cacheCreationInputTokens * price.cacheWrite +
+      usage.cacheReadInputTokens * price.cacheRead) /
     PER_TOKEN
   );
 }
@@ -308,11 +353,12 @@ export class AnthropicVlmClient implements VlmClient {
     }
 
     const usage = normalizeUsage(response.usage ?? {});
+    const resolvedModel = response.model ?? this.model;
     const base: Omit<VlmResponse, 'text'> = {
       stopReason: response.stop_reason ?? null,
       usage,
-      costUsd: computeCostUsd(usage),
-      model: response.model ?? this.model,
+      costUsd: computeCostUsd(usage, resolvedModel),
+      model: resolvedModel,
     };
 
     // stop_reason BEFORE content. A refusal is HTTP 200 with an empty content array;

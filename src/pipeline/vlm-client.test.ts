@@ -125,6 +125,30 @@ describe('computeCostUsd', () => {
       }),
     ).toBe(0);
   });
+
+  it('prices a different model at its own published rate, not the default', () => {
+    // Sonnet 5: $3.00 input / $15.00 output per MTok -- cheaper than Opus 5 on both.
+    const usage = {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+    };
+    const opusCost = computeCostUsd(usage, 'claude-opus-5');
+    const sonnetCost = computeCostUsd(usage, 'claude-sonnet-5');
+    expect(opusCost).toBeCloseTo(30.0, 10); // 5 + 25
+    expect(sonnetCost).toBeCloseTo(18.0, 10); // 3 + 15
+    expect(sonnetCost).toBeLessThan(opusCost);
+  });
+
+  it('refuses to silently mis-price a model with no published rate', () => {
+    expect(() =>
+      computeCostUsd(
+        { inputTokens: 100, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
+        'claude-nonexistent-model',
+      ),
+    ).toThrow(/No published pricing/);
+  });
 });
 
 describe('normalizeUsage', () => {

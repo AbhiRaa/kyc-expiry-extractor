@@ -380,6 +380,26 @@ Cost for a full eval run with a key is measured, not estimated, at **~$0.22** fo
 reports actual spend computed from `usage`). See `eval/results.md`'s "Total spend" line for
 the exact figure from your run.
 
+#### Comparing VLM models
+
+`ANTHROPIC_VLM_MODEL` overrides the default (`claude-opus-5`) for TC's two calls, so
+comparing a cheaper model is a rerun, not a code change:
+
+```bash
+ANTHROPIC_VLM_MODEL=claude-sonnet-5 npm run eval
+```
+
+Measured on this corpus: claude-sonnet-5 clears the same 96.0% overall accuracy with **zero
+confidently-wrong outcomes on either model** (including the prompt-injection case), at
+**42% lower total spend** ($0.17 vs $0.29) and faster mean TC latency (7.1s vs 8.7s) —
+coverage was actually a point higher on Sonnet in this run (40.0% vs 36.0%), though that
+specific number is closer to noise given the corpus size. TC is deliberately the
+last-resort tier (it only ever sees the ~25-30% of documents the deterministic/OCR tiers
+already gave up on), so the absolute dollars are small in either case — the point of
+running this side by side is to make the choice a measurement, not an assumption, the same
+way `AUTO_THRESHOLD` is derived from the accuracy-at-coverage curve rather than picked as a
+round number.
+
 ### Troubleshooting
 
 | Symptom | Cause and fix |
