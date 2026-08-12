@@ -151,6 +151,11 @@
   overflow-wrap: anywhere;
 }
 
+.previewNoteWarn {
+  color: var(--warn-fg);
+  font-weight: 600;
+}
+
 .previewSwap {
   margin-top: 2px;
   font-size: 11.5px;

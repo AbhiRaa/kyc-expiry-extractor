@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { looksTooLowResolution } from '@/lib/resolution';
 import PreviewModal from './PreviewModal';
 import styles from './UploadZone.module.css';
 
@@ -42,6 +43,15 @@ export interface PreparedUpload {
   previewUrl: string | null;
   /** Human-readable note about what we did, e.g. "downscaled 4032×3024 → 2000×1500". */
   note: string;
+  /**
+   * True when this image mirrors the server's own T0-C guard (`looksTooLowResolution`,
+   * `@/lib/resolution`) and will very likely come back `RESOLUTION_TOO_LOW` before any
+   * tier runs. Surfaced here so the note can say so *before* the round trip, using the
+   * identical thresholds the server judges by — not a separate, hand-guessed floor.
+   * Always false for PDFs and browser-undecodable formats, where these pixel dimensions
+   * aren't available client-side to judge.
+   */
+  lowResolution: boolean;
   /** Original file name, for display. */
   originalName: string;
   /** Bytes actually being uploaded. */
@@ -145,6 +155,7 @@ export async function prepareUpload(file: File): Promise<PreparedUpload> {
       thumbnailUrl: null,
       previewUrl: null,
       note: `PDF, ${mb(file.size)}, sent as-is`,
+      lowResolution: false,
       originalName: file.name,
       bytes: file.size,
     };
@@ -163,6 +174,7 @@ export async function prepareUpload(file: File): Promise<PreparedUpload> {
         thumbnailUrl: null,
         previewUrl: null,
         note: `${mb(file.size)}, not previewable in this browser — converting server-side`,
+        lowResolution: false,
         originalName: file.name,
         bytes: file.size,
       };
@@ -212,16 +224,22 @@ export async function prepareUpload(file: File): Promise<PreparedUpload> {
     const previewUrl = out.canvas.toDataURL('image/jpeg', 0.85);
 
     const resized = `${out.canvas.width}×${out.canvas.height}`;
-    const note =
-      source === resized
-        ? `${resized}, ${mb(prepared.size)}, EXIF applied and stripped`
-        : `${source} → ${resized}, ${mb(prepared.size)}, EXIF applied and stripped`;
+    const sizeAndOrientation = source === resized ? resized : `${source} → ${resized}`;
+    // Same combined trigger the server's T0-C guard uses (`@/lib/resolution`), so this
+    // warns using the identical threshold the server will actually judge it by — not a
+    // separate, hand-guessed floor that could silently disagree with the real one.
+    const lowResolution = looksTooLowResolution(out.canvas.width, out.canvas.height, prepared.size);
+    const note = lowResolution
+      ? `${sizeAndOrientation}, ${mb(prepared.size)} — too small to read reliably; retake it ` +
+        'closer, or upload the original rather than a messaging-app copy'
+      : `${sizeAndOrientation}, ${mb(prepared.size)}, EXIF applied and stripped`;
 
     return {
       file: prepared,
       thumbnailUrl,
       previewUrl,
       note,
+      lowResolution,
       originalName: file.name,
       bytes: prepared.size,
     };
@@ -363,7 +381,15 @@ export default function UploadZone({ onFile, onError, busy, preview }: UploadZon
             >
               <span className={styles.previewText}>
                 <span className={styles.previewName}>{preview.originalName}</span>
-                <span className={styles.previewNote}>{preview.note}</span>
+                <span
+                  className={
+                    preview.lowResolution
+                      ? `${styles.previewNote} ${styles.previewNoteWarn}`
+                      : styles.previewNote
+                  }
+                >
+                  {preview.note}
+                </span>
                 <span className={styles.previewSwap}>Tap to choose a different document</span>
               </span>
             </button>

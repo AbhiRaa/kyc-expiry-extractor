@@ -60,13 +60,16 @@ import {
   type ReasonCode,
   type TierResult,
 } from '@/types/contract';
+import { estimateEffectiveDpi, MIN_EFFECTIVE_DPI, MIN_FILE_BYTES } from '@/lib/resolution';
 
 // ---------------------------------------------------------------------------
 // Tunables. Exported so the eval harness can sweep them rather than guess them.
 // ---------------------------------------------------------------------------
 
-/** §11.1 #12. A trigger for the resolution check, not a rejection on its own (T0-C). */
-export const MIN_FILE_BYTES = 50 * 1024;
+/** Re-exported for backward compatibility — actual definitions live in
+ *  `@/lib/resolution`, shared with the client-side upload-prep warning
+ *  (`src/components/UploadZone.tsx`) so both sides judge resolution identically. */
+export { MIN_FILE_BYTES, MIN_EFFECTIVE_DPI, estimateEffectiveDpi };
 
 /** §7.4 — the VLM path gets the long edge capped here; the full-res copy is kept intact. */
 export const DOWNSCALE_LONG_EDGE = 2000;
@@ -113,9 +116,6 @@ export const LOW_CONTRAST_STDDEV = 25;
 
 /** §11.2 #19-#20 — beyond this we stop calling it skew and call it a rotation problem. */
 export const EXTREME_SKEW_DEG = 15;
-
-/** Below this, PDF417 will not decode and the printed text is marginal (§11.2 #18). */
-export const MIN_EFFECTIVE_DPI = 150;
 
 /** Corner-angle deviation from 90° that justifies paying for a perspective warp. */
 export const PERSPECTIVE_CORRECTION_MIN_DEG = 6;
@@ -434,27 +434,6 @@ export function estimateSkewAngle(
     }
   }
   return Math.round(best * 10) / 10;
-}
-
-/**
- * Effective DPI without knowing the physical document — the aspect ratio is the only
- * free signal, so we map it onto the standard physical sizes and divide.
- *
- * ID-1 (ISO 7810, every DL/state ID/most national ID cards) is 85.6 x 54 mm = 1.586:1.
- * A passport data page (TD3 booklet) is 125 x 88 mm = 1.42:1. Everything else is
- * assumed to be paper on the US Letter / A4 long edge. Deliberately coarse: §9 weights
- * effective DPI as a medium signal, and the failure mode we care about is "far too few
- * pixels for PDF417" (§11.2 #18), which survives a 20% error in the assumed size.
- */
-export function estimateEffectiveDpi(width: number, height: number): number {
-  const longEdge = Math.max(width, height);
-  const shortEdge = Math.max(1, Math.min(width, height));
-  const aspect = longEdge / shortEdge;
-  let physicalLongEdgeInches: number;
-  if (aspect >= 1.45 && aspect <= 1.75) physicalLongEdgeInches = 3.37; // ID-1 card
-  else if (aspect >= 1.3 && aspect < 1.45) physicalLongEdgeInches = 4.92; // passport data page
-  else physicalLongEdgeInches = 11; // paper
-  return Math.round(longEdge / physicalLongEdgeInches);
 }
 
 /**
