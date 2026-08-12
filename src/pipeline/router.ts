@@ -42,6 +42,7 @@ import {
   evaluateValidity,
   hasExplicitNonExpiringLabel,
 } from '@/engine/validity';
+import { buildCrmPayload } from './crm';
 import { type GateInput, runAdmissionGate } from './gate';
 import {
   cropAndDownscale,
@@ -119,6 +120,11 @@ export interface RouterInput extends RouterDependencies {
    * as a verdict on the client's say-so.
    */
   clientDecodedBarcode?: string;
+  /** Caller-supplied external CRM contact/deal id, e.g. a HubSpot contact id. Optional —
+   *  nothing in this system tracks an applicant identity on its own (document-in,
+   *  verdict-out), so `crm_payload.associations` is empty when this is omitted rather than
+   *  a hard requirement. See docs/DECISIONS.md §9 C6. */
+  applicantRef?: string;
 }
 
 /**
@@ -136,7 +142,7 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
 
   // --- T0 -----------------------------------------------------------------
   if (!isNormalized(input.outcome)) {
-    return rejectionResponse(requestId, input.outcome, today, Date.now() - started);
+    return rejectionResponse(requestId, input.outcome, today, Date.now() - started, input.applicantRef);
   }
 
   const doc = input.outcome;
@@ -407,7 +413,7 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
 
   const totalMs = Date.now() - started;
 
-  return {
+  const response: ExtractionResponse = {
     request_id: requestId,
     document: {
       class: documentClass,
@@ -443,6 +449,9 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
     cost_usd: Number(costUsd.toFixed(6)),
     admission,
   };
+  // decision is AUTO_PASS/AUTO_FAIL/REVIEW here, never REJECTED — that terminal path
+  // returns from gateRejectedResponse() above and never reaches this line.
+  return { ...response, crm_payload: buildCrmPayload(response, doc.contentHash, input.applicantRef) };
 }
 
 // ---------------------------------------------------------------------------
@@ -620,9 +629,10 @@ function rejectionResponse(
   outcome: NormalizeOutcome,
   today: Date,
   totalMs: number,
+  applicantRef?: string,
 ): ExtractionResponse {
   const tier = rejectionToTierResult(outcome as never);
-  return {
+  const response: ExtractionResponse = {
     request_id: requestId,
     document: {
       class: 'NOT_A_DOCUMENT',
@@ -661,6 +671,9 @@ function rejectionResponse(
     timing_ms: { total: totalMs, normalize: totalMs, tier: 0 },
     cost_usd: 0,
   };
+  // decision is REVIEW, never REJECTED — a corrupt/unsupported file still gets a CRM
+  // payload, because a human still has to look at it. Only a gate REJECT emits nothing.
+  return { ...response, crm_payload: buildCrmPayload(response, outcome.contentHash, applicantRef) };
 }
 
 /**
@@ -680,6 +693,14 @@ function gateRejectedResponse(
   normalizeMs: number,
   gateMs: number,
 ): ExtractionResponse {
+  // No crm_payload, no delivery attempt — the gate's own asymmetry rule (§8 A2) extended
+  // one layer out: input that never entered the review queue must not create CRM noise
+  // either. Logged only, for server-side observability, never sent anywhere (§15: no
+  // document content, only codes and the request id).
+  console.log('[crm] gate REJECT — no CRM payload emitted', {
+    request_id: requestId,
+    reason_codes: dedupe(['OUT_OF_DOMAIN', ...gateReasonCodes(admission)]),
+  });
   return {
     request_id: requestId,
     document: { class: 'NOT_A_DOCUMENT', class_confidence: 0, issuer: null, pages: 1, side: 'N/A' },

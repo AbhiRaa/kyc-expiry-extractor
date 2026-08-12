@@ -216,6 +216,38 @@ export interface AdmissionInfo {
 }
 
 // ---------------------------------------------------------------------------
+// CRM emission (v2 client rework, docs/DECISIONS.md §9) — a side effect of a
+// verdict, not part of it. Modeled on HubSpot's properties-plus-associations
+// object shape (the client's primary platform); the actual property/object
+// names live in one exported map (src/pipeline/crm.ts), not hardcoded here or
+// duplicated at each call site.
+// ---------------------------------------------------------------------------
+
+export interface CrmAssociation {
+  toObjectType: string;
+  toObjectId: string;
+  associationType: string;
+}
+
+export interface CrmPayload {
+  objectType: string;
+  /** Derived from the document's content hash (§11.1 #14 already anticipated this for
+   *  free repeat uploads) — a retried upload of identical bytes produces the same key,
+   *  so the CRM can dedupe rather than open a second review task for one document. */
+  idempotencyKey: string;
+  properties: Record<string, string | number | boolean | null>;
+  associations: CrmAssociation[];
+}
+
+export type CrmDeliveryStatus = 'not_configured' | 'sent' | 'failed';
+
+export interface CrmDeliveryInfo {
+  status: CrmDeliveryStatus;
+  reason: string | null;
+  attempted_at: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Response shape
 // ---------------------------------------------------------------------------
 
@@ -314,6 +346,15 @@ export interface ExtractionResponse {
    *  which never reaches the gate at all — see rejectionResponse() in router.ts. Every
    *  other path, including a gate REJECT, populates this. */
   admission?: AdmissionInfo;
+  /** Absent exactly when decision === 'REJECTED' — the gate's own asymmetry rule (§8 A2)
+   *  extended one layer out: input that never entered the review queue must not create
+   *  CRM noise either. Present on every other path regardless of whether CRM_WEBHOOK_URL
+   *  is configured, so the payload is inspectable in the demo without any CRM set up. */
+  crm_payload?: CrmPayload;
+  /** Present exactly when crm_payload is. Delivery is attempted synchronously with a
+   *  bounded timeout and never throws — a CRM outage affects this field, never the
+   *  extraction verdict or the response status. See docs/DECISIONS.md §9. */
+  crm_delivery?: CrmDeliveryInfo;
 }
 
 // ---------------------------------------------------------------------------

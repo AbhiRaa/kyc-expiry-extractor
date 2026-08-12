@@ -590,3 +590,86 @@ framing itself doesn't have. That module is deliberately factored out of `eval/r
 rather than inlined: it's the same formula the ROI panel (planned UI work) needs, and a
 second hand-tuned copy of "minutes per document" living in the UI would silently drift
 from this one the first time either got adjusted.
+
+## 9. CRM emission (v2 client rework)
+
+Post-gate client follow-up, not brief-driven — its own `C1…` series, the same pattern
+`## 7`'s `V1–V8` and `## 8`'s `A1–A7` already use for later, non-brief work.
+
+### C1 — a side effect of a verdict, not part of it
+
+`buildCrmPayload` (`src/pipeline/crm.ts`) is pure — no I/O, no `fetch`, only a mapping
+from an already-final `ExtractionResponse` to a CRM object. `deliverCrmPayload`, the one
+impure function in that file, is called from `src/app/api/extract/route.ts` — the
+existing I/O boundary, the same place that already decides whether to construct a VLM
+client — strictly *after* the verdict is final. The extraction result is correct
+regardless of whether the CRM is reachable, so `crm_payload` is always present in the
+response body (whether or not `CRM_WEBHOOK_URL` is even set) and delivery failure can
+change `crm_delivery`, never the decision or the HTTP status. Same posture a missing
+`ANTHROPIC_API_KEY` already has one layer in: the system keeps working when a dependent
+service is degraded, it just reports the degradation honestly instead of hiding it.
+
+### C2 — `REJECTED` emits nothing: the gate's asymmetry rule, extended one layer out
+
+A gate `REJECT` (`gateRejectedResponse`, `router.ts`) produces no `crm_payload` and
+attempts no delivery — only a `console.log` for server-side observability. This is not
+an oversight scoped down from "always emit"; it is the direct extension of §8 A2's
+asymmetry rule past the extraction boundary: input confidently out of domain never
+occupied a review-queue slot in the first place, so it must not occupy a CRM task slot
+either. `REVIEW` (including the pre-gate T0 rejection path, `rejectionResponse`) is
+different — a human still has to look at it, so the CRM still needs to know.
+
+### C3 — the idempotency key reuses an existing hash, not a new one
+
+`NormalizedDocument.contentHash` / `NormalizeRejection.contentHash` (`normalize.ts`) —
+SHA-256 of the input bytes — already existed for a documented but previously unwired
+purpose (§11.1 #14, "lets a caller make repeat uploads free"). `crm_payload.idempotencyKey`
+is `kyc-${contentHash}` rather than a freshly minted value: a retried upload of identical
+bytes produces the same key on every attempt, so the CRM dedupes instead of opening a
+second review task for one physical document, without this codebase computing a second
+hash of the same bytes for a second purpose.
+
+### C4 — delivery is bounded and awaited, not truly non-awaited fire-and-forget
+
+The two stated requirements are in real tension: "never blocks or fails the response"
+reads as classic fire-and-forget (don't await the POST at all), but reporting `sent` vs.
+`failed` synchronously in the same response — not just `queued` — is only possible if the
+call *is* awaited. The resolution: `deliverCrmPayload` is awaited, but bounded by a 3s
+`AbortController` timeout and wrapped so every outcome (success, non-2xx, network error,
+timeout) resolves to a `CrmDeliveryInfo` rather than throwing. "Never blocks" is honored
+as "never blocks beyond a short, fixed bound, and never converts a CRM problem into a
+5xx" rather than literally "returns before the POST starts" — the latter would have made
+`sent`/`failed` unreportable in-band, which the requirement explicitly wanted.
+
+### C5 — HubSpot's properties-plus-associations shape, names centralized not hardcoded
+
+`CrmPayload` (`contract.ts`) mirrors HubSpot's own object-write shape — `properties`
+(flat key/value) plus `associations` (links to other objects) — since HubSpot is the
+client's primary platform. Property and object-type names live in one exported table,
+`CRM_PROPERTY_KEYS` plus three `CRM_*` env vars (`crm.ts`), rather than inline literals
+scattered through `buildCrmPayload`'s body — the same reasoning `GATE_KEYWORDS` (§8 A5)
+already applies to keyword lists: swapping to a different CRM's naming convention means
+editing one table, not hunting through the mapping function. Reason codes map to a
+semicolon-joined string, not a JSON array, matching HubSpot's own convention for a
+multi-value/checkbox property rather than a shape that happened to be convenient here.
+
+### C6 — associations require a caller-supplied `applicantRef`; empty otherwise
+
+The pipeline is document-in, verdict-out — nothing in this system tracks an applicant or
+contact identity on its own, so there is no id to associate a CRM object with unless the
+caller supplies one. `RouterInput.applicantRef` (optional, threaded from `route.ts`'s
+`applicantRef` form field) becomes the payload's one association when present; omitted,
+`associations` is `[]`. This is a known limitation of the payload's usefulness, not a gap
+in the shape itself — the same category as the EXIF-presence proxy already recorded in
+`## 6. Known limits`: correct within what the system actually tracks today.
+
+### Verification note
+
+Router-level wiring (REJECT → no payload; every other path → payload present, keyed off
+the real content hash) is verified by hand against the actual pipeline and real generated
+corpus documents, not by a mocked unit test — `eval/corpus/*.png` is gitignored
+(deterministically regenerated by `npm run generate:corpus`, never committed), so a test
+in `npm test` cannot depend on those files without breaking on a fresh clone that hasn't
+run corpus generation yet. `buildCrmPayload` and `deliverCrmPayload` themselves are fully
+unit-tested (`src/pipeline/crm.test.ts`) with no such dependency, since neither touches
+the filesystem.

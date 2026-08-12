@@ -40,12 +40,12 @@ as round numbers (§9).
 
 | Tier | Documents | Share | Mean latency | Mean cost |
 |---|---|---|---|---|
-| NONE | 15 | 42.9% | 679 ms | $0.0000 |
-| TB_OCR | 10 | 28.6% | 1928 ms | $0.0000 |
-| TA_PDF417 | 7 | 20.0% | 68 ms | $0.0000 |
-| TA_MRZ | 3 | 8.6% | 1460 ms | $0.0000 |
+| NONE | 15 | 42.9% | 650 ms | $0.0000 |
+| TB_OCR | 10 | 28.6% | 1834 ms | $0.0000 |
+| TA_PDF417 | 7 | 20.0% | 65 ms | $0.0000 |
+| TA_MRZ | 3 | 8.6% | 1426 ms | $0.0000 |
 
-Mean latency across all documents: **981 ms**.
+Mean latency across all documents: **938 ms**.
 Total spend for the whole corpus: **$0.0000**.
 
 ## Routing

@@ -300,6 +300,10 @@ Stated as conscious exclusions, not oversights.
   crop endpoint, no shared store, and no inline-image response body to expire (see G1).
 - No document content in logs. Metrics, tier decisions and reason codes only — never
   extracted values, never raw OCR text.
+- CRM emission (§9) carries the same posture one layer out: `crm_payload` is built only
+  from the decision itself — a decision code, a date, a confidence, reason codes — never
+  a document pixel, snippet, or crop. A gate `REJECTED` document is excluded entirely,
+  by design: junk that never entered the review queue must not create CRM noise either.
 - All document text is treated as untrusted **data**, never as instruction. The real
   defence against an injected date is not prompt hardening — it is grounding every VLM
   value against the raw OCR token stream, so a value that is not physically on the page
@@ -317,7 +321,7 @@ Stated as conscious exclusions, not oversights.
 
 Under five minutes from a cold start. **No API key is needed** for anything except the TC
 dual-VLM tier — the deterministic tiers, OCR tier, constraint engine, routing, UI and the
-entire 309-test suite all run without one.
+entire 332-test suite all run without one.
 
 ### Requirements
 
@@ -339,7 +343,7 @@ npm install
 # 2. Environment. Works with an empty key; fill it in to enable the TC tier.
 cp .env.example .env.local
 
-# 3. Generate the 25-document eval corpus.
+# 3. Generate the 35-document eval corpus.
 #    REQUIRED — the corpus is NOT included in the repo. It is generated deterministically
 #    (byte-identical every run), so shipping it would be redundant weight. This also
 #    populates the sample documents the UI's one-tap buttons load.
@@ -357,8 +361,8 @@ refuses to pick any of its 15 dates.
 ### Verifying it
 
 ```bash
-npm test                # 309 unit tests. No network, no API key. ~7 s.
-npm run eval            # full pipeline over all 25 documents -> eval/results.md
+npm test                # 332 unit tests. No network, no API key. ~7 s.
+npm run eval            # full pipeline over all 35 documents -> eval/results.md
 npm run build           # production build
 ```
 
@@ -408,6 +412,26 @@ this side by side wasn't the money — it was not assuming the most expensive mo
 right one without measuring, the same way `AUTO_THRESHOLD` is derived from the
 accuracy-at-coverage curve rather than picked as a round number.
 
+### Enabling CRM emission
+
+Every non-`REJECTED` `/api/extract` response always carries a `crm_payload` — a compact,
+HubSpot-shaped (`properties` + `associations`) summary of the verdict, never document
+pixels or raw extracted text. Nothing is sent anywhere until a webhook URL is configured;
+until then `crm_delivery.status` reads `not_configured` and the payload just sits in the
+response body for inspection. Point it at the bundled mock receiver to see a real round
+trip locally:
+
+```
+CRM_WEBHOOK_URL=http://localhost:3000/api/mock-crm-webhook
+```
+
+Upload any document and check the server console — the receiver logs what it got and
+`crm_delivery.status` in the response flips to `sent`. A gate `REJECTED` document emits
+nothing at all (no payload, no POST, log only) — see docs/DECISIONS.md §9 for why that
+mirrors the admission gate's own asymmetry rule one layer out. `CRM_OBJECT_TYPE` and the
+association env vars (`.env.example`) let the property/object naming match a real CRM
+without touching code — see `src/pipeline/crm.ts`.
+
 ### Troubleshooting
 
 | Symptom | Cause and fix |
@@ -418,6 +442,7 @@ accuracy-at-coverage curve rather than picked as a round number.
 | `DOMMatrix is not defined` | A `pdfjs-dist` import bypassing the legacy build. The code already uses `pdfjs-dist/legacy/build/pdf.mjs`; this only appears if that import is changed. |
 | Eval numbers differ from this README | Expected either way — see the deterministic-only vs full-pipeline rows in [Results](#results); which one your run matches depends on whether `ANTHROPIC_API_KEY` is set. Within either mode, numbers should match exactly; the anchor date is pinned to 2026-08-09 so results do not drift with the calendar. |
 | Tesseract writes into the repo root | Set `TESSERACT_CACHE_PATH` in `.env.local`. Defaults to the OS temp directory. |
+| `crm_delivery.status` stays `failed` | Confirm `CRM_WEBHOOK_URL` is reachable from the server process — a typo'd path (e.g. missing `/api/mock-crm-webhook`) fails the same way a real outage would, by design (§9 C4). |
 
 ### Deploying
 

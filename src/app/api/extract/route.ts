@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server';
 
 import { PIPELINE_BUDGET_MS } from '@/types/contract';
+import { deliverCrmPayload } from '@/pipeline/crm';
 import { normalizeDocument } from '@/pipeline/normalize';
 import { runPipeline } from '@/pipeline/router';
 import { AnthropicVlmClient } from '@/pipeline/vlm-client';
@@ -56,6 +57,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     const clientDecodedBarcode = readOptionalString(form.get('barcode'));
+    const applicantRef = readOptionalString(form.get('applicantRef'));
 
     const outcome = await normalizeDocument(bytes, { declaredName: file.name });
 
@@ -64,13 +66,22 @@ export async function POST(request: Request): Promise<NextResponse> {
     // MODEL_UNAVAILABLE rather than failing the request.
     const vlmClient = process.env.ANTHROPIC_API_KEY ? new AnthropicVlmClient() : undefined;
 
-    const response = await runPipeline({
+    const result = await runPipeline({
       outcome,
       vlmClient,
       clientDecodedBarcode,
+      applicantRef,
       budgetUsd: PER_DOCUMENT_BUDGET_USD,
       budgetMs: PIPELINE_BUDGET_MS,
     });
+
+    // CRM delivery is a side effect of the verdict, not part of it (docs/DECISIONS.md §9):
+    // attempted here, at the I/O boundary, after the verdict is already final. Bounded by
+    // deliverCrmPayload's own timeout and never throws, so a CRM outage can change
+    // crm_delivery but can never turn a correct extraction into a failed request.
+    const response = result.crm_payload
+      ? { ...result, crm_delivery: await deliverCrmPayload(result.crm_payload) }
+      : result;
 
     return NextResponse.json(response, {
       status: 200,
