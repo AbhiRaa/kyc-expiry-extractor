@@ -188,6 +188,26 @@
   overflow-wrap: anywhere;
 }
 
+.gateCheck {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.gateCheckResult {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ok-fg);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.gateCheckError {
+  font-size: 12px;
+  color: var(--bad-fg);
+  line-height: 1.5;
+}
+
 /* `margin-top: auto` pins the privacy note to the bottom of the rail, so it sits
    opposite the footer in the canvas rather than floating under the samples. */
 .railNote {

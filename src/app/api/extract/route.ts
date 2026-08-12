@@ -21,6 +21,7 @@ import { deliverCrmPayload } from '@/pipeline/crm';
 import { normalizeDocument } from '@/pipeline/normalize';
 import { runPipeline } from '@/pipeline/router';
 import { AnthropicVlmClient } from '@/pipeline/vlm-client';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -31,7 +32,26 @@ const MAX_UPLOAD_BYTES = 4_500_000;
 /** Per-document spend ceiling for the VLM tier (§11.6 #74). */
 const PER_DOCUMENT_BUDGET_USD = 0.25;
 
+/** Generous enough for a real testing session (six one-tap samples plus a few manual
+ *  uploads comfortably fits), tight enough to blunt a scripted flood. In-memory,
+ *  per-instance, best-effort — see src/lib/rate-limit.ts's own header for the honest
+ *  limitation. */
+const RATE_LIMIT_MAX_REQUESTS = 20;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
 export async function POST(request: Request): Promise<NextResponse> {
+  const { allowed, retryAfterSeconds } = checkRateLimit(
+    `extract:${getClientIp(request)}`,
+    RATE_LIMIT_MAX_REQUESTS,
+    RATE_LIMIT_WINDOW_MS,
+  );
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Wait a moment and try again.' },
+      { status: 429, headers: retryAfterSeconds ? { 'Retry-After': String(retryAfterSeconds) } : {} },
+    );
+  }
+
   try {
     const contentType = request.headers.get('content-type') ?? '';
     if (!contentType.includes('multipart/form-data')) {

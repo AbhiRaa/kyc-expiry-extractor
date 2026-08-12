@@ -1,0 +1,177 @@
+[
+  {
+    "filename": "01_dl_ca_front_only.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "02_dl_tx_back_pdf417.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "03_dl_ny_both_sides.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "04_dl_fl_vertical_under21.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "05_dl_wa_temporary_paper.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "06_dl_on_canada_ccyymmdd.png",
+    "expectedClass": "NON_US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "07_passport_usa.png",
+    "expectedClass": "PASSPORT",
+    "adversarial": false
+  },
+  {
+    "filename": "08_passport_gbr.png",
+    "expectedClass": "PASSPORT",
+    "adversarial": false
+  },
+  {
+    "filename": "09_residence_permit_td1_deu.png",
+    "expectedClass": "RESIDENCE_PERMIT",
+    "adversarial": false
+  },
+  {
+    "filename": "10_passport_usa_expired.png",
+    "expectedClass": "PASSPORT",
+    "adversarial": false
+  },
+  {
+    "filename": "11_insurance_coverage_end.png",
+    "expectedClass": "MEDICAL_INSURANCE_CARD",
+    "adversarial": false
+  },
+  {
+    "filename": "12_insurance_date_range.png",
+    "expectedClass": "MEDICAL_INSURANCE_CARD",
+    "adversarial": false
+  },
+  {
+    "filename": "13_insurance_no_expiry.png",
+    "expectedClass": "MEDICAL_INSURANCE_CARD",
+    "adversarial": false
+  },
+  {
+    "filename": "14_bank_statement_recent.pdf",
+    "expectedClass": "BANK_STATEMENT",
+    "adversarial": false
+  },
+  {
+    "filename": "15_bank_statement_stale.pdf",
+    "expectedClass": "BANK_STATEMENT",
+    "adversarial": false
+  },
+  {
+    "filename": "16_bank_statement_40pages.pdf",
+    "expectedClass": "BANK_STATEMENT",
+    "adversarial": false
+  },
+  {
+    "filename": "17_utility_bill_recent.pdf",
+    "expectedClass": "UTILITY_BILL",
+    "adversarial": false
+  },
+  {
+    "filename": "18_utility_bill_stale.pdf",
+    "expectedClass": "UTILITY_BILL",
+    "adversarial": false
+  },
+  {
+    "filename": "19_employment_letter_many_dates.pdf",
+    "expectedClass": "EMPLOYMENT_LETTER",
+    "adversarial": false
+  },
+  {
+    "filename": "20_employment_letter_non_expiring.pdf",
+    "expectedClass": "EMPLOYMENT_LETTER",
+    "adversarial": false
+  },
+  {
+    "filename": "21_employment_letter_plain.pdf",
+    "expectedClass": "EMPLOYMENT_LETTER",
+    "adversarial": false
+  },
+  {
+    "filename": "22_degraded_blur_dl_az.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "23_degraded_glare_dl_nv.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "24_prompt_injection_sticker.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "25_not_a_document_meme.png",
+    "expectedClass": "NOT_A_DOCUMENT",
+    "adversarial": true
+  },
+  {
+    "filename": "26_dl_barcode_rotated90_back.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "27_dl_barcode_offcenter_back.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "28_dl_barcode_edge_back.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  },
+  {
+    "filename": "29_adversarial_crm_screenshot.png",
+    "expectedClass": "NOT_A_DOCUMENT",
+    "adversarial": true
+  },
+  {
+    "filename": "30_adversarial_wallpaper.png",
+    "expectedClass": "NOT_A_DOCUMENT",
+    "adversarial": true
+  },
+  {
+    "filename": "31_adversarial_selfie.png",
+    "expectedClass": "NOT_A_DOCUMENT",
+    "adversarial": true
+  },
+  {
+    "filename": "32_adversarial_receipt.png",
+    "expectedClass": "NOT_A_DOCUMENT",
+    "adversarial": true
+  },
+  {
+    "filename": "33_adversarial_webpage_screenshot.png",
+    "expectedClass": "NOT_A_DOCUMENT",
+    "adversarial": true
+  },
+  {
+    "filename": "34_adversarial_blurry_wall.png",
+    "expectedClass": "NOT_A_DOCUMENT",
+    "adversarial": true
+  },
+  {
+    "filename": "35_illegible_dl_wy.png",
+    "expectedClass": "US_DRIVERS_LICENSE",
+    "adversarial": false
+  }
+]

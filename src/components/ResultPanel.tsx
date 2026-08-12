@@ -7,6 +7,7 @@ import type {
   SourceTier,
   Verdict,
 } from '@/types/contract';
+import type { GateCorpusCheckResult } from '@/types/gate-check';
 import DateInventory, { findSelectedIndex, humanizeEnum } from './DateInventory';
 import PipelineRail from './PipelineRail';
 import RoiPanel from './RoiPanel';
@@ -181,6 +182,11 @@ function Chevron() {
 
 export interface ResultPanelProps {
   result: ExtractionResponse;
+  /** A live run of the admission gate against the real eval corpus (docs/DECISIONS.md's
+   *  live gate-check entry), if the sidebar's "verify live" button has been used this
+   *  session. Passed through to RoiPanel, which prefers it over its own static reference
+   *  numbers when present. `null`/absent is a normal state — most visits never trigger it. */
+  liveGateCheck?: GateCorpusCheckResult | null;
 }
 
 /**
@@ -215,7 +221,7 @@ export interface ResultPanelProps {
  * come free, with no ARIA to get wrong. The chevron rotation is CSS off `[open]`,
  * so it looks identical.
  */
-export default function ResultPanel({ result }: ResultPanelProps) {
+export default function ResultPanel({ result, liveGateCheck }: ResultPanelProps) {
   const { validity, evidence, integrity, decision } = result;
   const head = headline(decision, validity.verdict);
   const days = formatDaysRemaining(validity.days_remaining);
@@ -479,7 +485,7 @@ export default function ResultPanel({ result }: ResultPanelProps) {
       </div>
 
       {/* What the admission gate's cost story means, for this document and at scale. */}
-      <RoiPanel result={result} />
+      <RoiPanel result={result} liveGateCheck={liveGateCheck} />
     </section>
   );
 }

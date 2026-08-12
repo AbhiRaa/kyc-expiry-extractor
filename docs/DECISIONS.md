@@ -875,3 +875,92 @@ first numeric `<input>` in the app; styled to the existing `--surface-alt`/`--bo
 conventions with native spinner arrows removed (visual noise against the app's otherwise
 flat control language), relying on the global `:focus-visible` treatment already defined
 in `globals.css` rather than introducing new focus styling.
+
+## 13. A live gate check, triggerable from the UI
+
+Feedback on §12's panel from a UI-only walkthrough: someone testing only the deployed app,
+with no terminal, has no way to check whether "7/7 contained, $0.88 avoided" is real —
+it's a hardcoded constant. This entry covers making it genuinely live: a button in the
+sidebar that runs the real admission gate against the real 35-document corpus, server-side,
+right now, with a hard structural guarantee that it costs $0.
+
+### G1 — `runPipeline` with no `vlmClient`, not a hand-rolled call to the gate
+
+The first instinct was to call `runAdmissionGate` (`gate.ts`) directly per corpus document,
+reconstructing its input via `normalizeDocument`. Wrong: `admission.spend_avoided_usd` for
+`ADMIT_LIMITED` is finalized by **router-level** logic — whether `needVlm` would actually
+have been true (`router.ts`'s `needVlm && admitLimited` branch) — not by the gate alone.
+Reproducing that correctly means running the real router, not a shortcut that happens to
+look similar.
+
+The fix: `POST /api/eval-gate` (`src/app/api/eval-gate/route.ts`) calls **`runPipeline()`**
+with **no `vlmClient` passed at all**. TA (MRZ/PDF417) and TB (Tesseract OCR) are already
+free, deterministic tiers; only TC costs money, and `runPipeline` already handles a missing
+`vlmClient` gracefully (`MODEL_UNAVAILABLE`, never attempts a call) — the exact path
+`eval/run.ts` already exercises for its own "no key" row. Cost is structurally $0: there is
+no client object to call the paid API with, not a budget check that could be bypassed.
+Verified directly, not assumed: the live endpoint's output matches `eval/results.md`'s
+committed figures exactly (7/7 contained, 4/7 rejected, 0/28 false-rejects, $0.88 avoided).
+
+### G2 — the corpus has to actually exist where the code runs
+
+`eval/corpus/*` is deliberately gitignored (§6/§12's own header: reproducibility, avoid
+bloating every clone) and `next build` never runs `generate:corpus`, so none of the 35
+files exist in a deployed build. `public/samples/` (`eval/copy-samples.ts`) already solves
+exactly this for the 6 one-tap sample documents — `public/` carries no gitignore rule, so
+whatever lands there survives into any deployment. New `eval/copy-eval-corpus.ts`, modeled
+directly on `copy-samples.ts`, extends the same mechanism to the whole corpus: copies all
+35 files plus a `manifest.json` (`{filename, expectedClass, adversarial}[]`, `adversarial`
+computed once via `isAdversarial()`, now exported from `eval/run.ts` — one source of truth,
+not a second hand-copied condition) into `public/eval-corpus/`, wired as a third step in
+`npm run generate:corpus`. Committing the result (~1.7 MB across 35 files) is a deliberate,
+documented exception to `eval/corpus/`'s own policy, following the exact precedent
+`public/samples/` already set at 1/6th the scale — the cost of the exception is trivial
+next to what it buys (a corpus that's actually reachable at runtime).
+
+`ANCHOR_TODAY` moved from `eval/generate-corpus.ts` to `src/lib/anchor-date.ts` (re-exported
+from its old location for compatibility, same pattern as `src/lib/resolution.ts`), since
+`src/app/api/eval-gate` needs to evaluate against the same pinned date the corpus was built
+against and cannot import from `eval/` at runtime (that tree isn't part of the deployed
+server bundle).
+
+**A real bug caught by running the code, not by review.** `eval/copy-eval-corpus.ts`
+originally imported `isAdversarial`/`parseCsv` directly from `eval/run.ts`. `run.ts` called
+its own `main()` unconditionally at module scope, with no guard — unlike
+`generate-corpus.ts`, which already guards its own `main()` behind an `invokedDirectly`
+check (`process.argv[1]` against the module's own URL). The result: importing two small,
+pure helper functions silently triggered a full `npm run eval` as a side effect of the
+import — caught immediately by actually running `npm run generate:corpus` and noticing
+`eval/results.md` had changed when nothing should have touched it. Fixed at the root: gave
+`run.ts` the same `invokedDirectly` guard `generate-corpus.ts` already had, rather than
+routing around it by relocating the helpers — the guard is the correct invariant for any
+script in this directory that wants to be safely importable, and now both scripts hold it.
+
+### G3 — the rate limiter, and fixing a false claim along the way
+
+No rate limiting existed anywhere in this codebase before this — no `middleware.ts`, no
+dependency, nothing in any route — despite the README claiming "Rate limited by IP" under
+Security and PII. `page.tsx`'s `submit()` even had a dedicated 429-handling branch already
+written, unreachable, since nothing had ever sent a 429. New `src/lib/rate-limit.ts`:
+in-memory, per-IP, fixed-window. Honestly limited on purpose — module-level `Map` state is
+per-instance and best-effort, the same limitation this repo's own Roadmap already accepts
+for the (also in-memory) per-document cost cap: "currently per-instance and best-effort
+because serverless functions share no state" (G4). Applied to both `/api/extract` (making
+the README's existing claim actually true, confirmed by the user rather than assumed —
+touches an already-shipped route) and `/api/eval-gate` (stricter window: one request now
+does ~35x the work of one extraction). Verified live: a burst of requests against
+`/api/eval-gate` correctly 429s on the request past the limit, in milliseconds, before any
+of the expensive per-document work starts — the check runs first in the handler, not after.
+
+### G4 — the UI: independent of document-extraction state, on purpose
+
+The trigger lives in the sidebar (`page.tsx`), not inside `ResultPanel`, and its state
+(`gateCheckStatus`/`gateCheckResult`/`gateCheckError`) is deliberately separate from
+`result`/`status` — a corpus summary is a structurally different result from a single
+document's verdict, and the button must stay usable whether or not anyone has uploaded
+anything yet. Once a check completes, its result is threaded down through `ResultPanel` to
+`RoiPanel` as `liveGateCheck`, which prefers it over the static `CORPUS_REFERENCE` fallback
+when present — the static numbers never disappear, they're just superseded the moment a
+real one exists, and the panel's disclosure auto-opens (`<details open={corpus.isLive}>`)
+to actually show it rather than leaving the proof one click further away than the button
+that just fetched it.

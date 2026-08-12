@@ -63,18 +63,16 @@ import sharp from 'sharp';
 import { toBuffer as barcodeToBuffer } from 'bwip-js/node';
 
 import type { DocumentClass, ValidityBasis, Verdict } from '@/types/contract';
+import { ANCHOR_TODAY } from '@/lib/anchor-date';
 
 // ---------------------------------------------------------------------------
 // Anchors and paths
 // ---------------------------------------------------------------------------
 
-/**
- * The pinned "today". Everything time-relative in the corpus (recency windows, the
- * expired passport, the stale utility bill) is expressed as an offset from this, so the
- * eval's verdicts are stable forever. The eval harness must evaluate against this same
- * anchor rather than the wall clock.
- */
-export const ANCHOR_TODAY = '2026-08-09';
+/** Re-exported for backward compatibility — the actual definition lives in
+ *  `@/lib/anchor-date`, shared with `src/app/api/eval-gate`, which cannot import from
+ *  `eval/` at runtime. */
+export { ANCHOR_TODAY };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const CORPUS_DIR = path.join(HERE, 'corpus');

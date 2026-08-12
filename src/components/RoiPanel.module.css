@@ -144,17 +144,26 @@
   transform: rotate(0deg);
 }
 
-.staticBadge {
+.staticBadge,
+.liveBadge {
   margin-left: auto;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-faint);
-  background: var(--surface-alt);
   border-radius: var(--radius-pill);
   padding: 3px 9px;
   white-space: nowrap;
+}
+
+.staticBadge {
+  color: var(--text-faint);
+  background: var(--surface-alt);
+}
+
+.liveBadge {
+  color: var(--ok-fg);
+  background: var(--ok-bg);
 }
 
 .detailsBody {

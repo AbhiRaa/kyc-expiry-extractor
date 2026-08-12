@@ -324,7 +324,10 @@ Stated as conscious exclusions, not oversights.
   defence against an injected date is not prompt hardening — it is grounding every VLM
   value against the raw OCR token stream, so a value that is not physically on the page
   cannot survive.
-- Rate limited by IP.
+- Rate limited by IP on `/api/extract` and `/api/eval-gate` (20/min and 3/10min
+  respectively — `src/lib/rate-limit.ts`). In-memory and per-instance, the same honest
+  limitation the Roadmap already states for the per-document cost cap (G4) — real
+  protection against casual abuse, not a production-grade distributed limiter.
 - **The production note that matters:** real KYC documents cannot be sent to a public model
   API. This demo uses a hosted VLM because the corpus is synthetic. Production requires
   self-hosted inference — and at volume, self-hosted VLM OCR on mid-tier GPUs is now
@@ -447,6 +450,19 @@ nothing at all (no payload, no POST, log only) — see docs/DECISIONS.md §9 for
 mirrors the admission gate's own asymmetry rule one layer out. `CRM_OBJECT_TYPE` and the
 association env vars (`.env.example`) let the property/object naming match a real CRM
 without touching code — see `src/pipeline/crm.ts`.
+
+### Verifying the admission gate's numbers live, from the UI
+
+The ROI panel's "Proven on the evaluation corpus" numbers ship as a static reference
+(pinned from the last `npm run eval` run) so the panel works with zero setup — but a
+static number is also unfalsifiable from the UI alone. The sidebar's **"Verify the
+admission gate, live"** button fixes that: it calls `POST /api/eval-gate`, which runs the
+real gate against the real 35-document corpus, server-side, right now (~30s), and returns
+real numbers that replace the static ones the moment they land. Cost is structurally $0 —
+the call never constructs a VLM client at all, so there is nothing to bill against, not
+just a budget check that could be bypassed (docs/DECISIONS.md §13). Works out of the box:
+`npm run generate:corpus` already populates `public/eval-corpus/`, which is what the
+endpoint reads.
 
 ### Troubleshooting
 

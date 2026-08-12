@@ -2,6 +2,7 @@
 
 import { useId, useState } from 'react';
 import type { AdmissionDecision, ExtractionResponse } from '@/types/contract';
+import type { GateCorpusCheckResult } from '@/types/gate-check';
 import {
   DEFAULT_LOADED_COST_PER_HOUR_USD,
   DEFAULT_REVIEWER_ASSUMPTION,
@@ -53,10 +54,11 @@ const ADMISSION_TEXT: Record<AdmissionDecision, { tone: Tone; label: string; det
 };
 
 /** Static reference numbers from the last real `npm run eval` run against the 35-document
- *  synthetic corpus, pinned at commit b7d8b62 (eval/results.md, docs/DECISIONS.md §8). Not
- *  computed live: this app holds only the single most recent ExtractionResponse in state,
- *  never a corpus to aggregate over (see docs/DECISIONS.md's ROI panel entry). Regenerate
- *  via `npm run eval` and update these by hand if the corpus or pipeline changes again. */
+ *  synthetic corpus, pinned at commit b7d8b62 (eval/results.md, docs/DECISIONS.md §8) —
+ *  the fallback shown until the sidebar's "verify live" button (POST /api/eval-gate) has
+ *  actually been used this session. That endpoint runs the real gate against the real
+ *  corpus, live, server-side, at $0 cost (docs/DECISIONS.md's live gate-check entry) — once
+ *  it returns, its numbers replace these below, not just sit beside them. */
 const CORPUS_REFERENCE = {
   adversarialTotal: 7,
   containedCount: 7,
@@ -66,6 +68,47 @@ const CORPUS_REFERENCE = {
   spendAvoidedUsd: 0.88,
   sourceCommit: 'b7d8b62',
 };
+
+interface CorpusSummary {
+  adversarialTotal: number;
+  containedCount: number;
+  rejectedCount: number;
+  nonAdversarialTotal: number;
+  falseRejectCount: number;
+  spendAvoidedUsd: number;
+  isLive: boolean;
+  badgeText: string;
+  sourceNote: string;
+}
+
+function summarizeCorpus(live: GateCorpusCheckResult | null | undefined): CorpusSummary {
+  if (live) {
+    return {
+      adversarialTotal: live.adversarialTotal,
+      containedCount: live.containedCount,
+      rejectedCount: live.rejectedCount,
+      nonAdversarialTotal: live.nonAdversarialTotal,
+      falseRejectCount: live.falseRejectCount,
+      spendAvoidedUsd: live.spendAvoidedUsd,
+      isLive: true,
+      badgeText: 'verified live just now',
+      sourceNote:
+        `Computed live against all ${live.documentsChecked} eval-corpus documents just now ` +
+        `(${(live.durationMs / 1000).toFixed(1)}s) — these five numbers came from this run, ` +
+        `not a fixed reference.`,
+    };
+  }
+  return {
+    ...CORPUS_REFERENCE,
+    isLive: false,
+    badgeText: 'static reference, not computed live',
+    sourceNote:
+      `35-document synthetic corpus, commit ${CORPUS_REFERENCE.sourceCommit} — these five ` +
+      `numbers are fixed reference figures from that run, not computed by this page. Verify ` +
+      `them yourself: the "Verify the admission gate, live" button in the sidebar, or ` +
+      `\`npm run eval\` in the repository.`,
+  };
+}
 
 function fmtUsd(n: number): string {
   return `$${n.toFixed(2)}`;
@@ -89,6 +132,9 @@ function parsePositiveNumber(raw: string, fallback: number): number {
 
 export interface RoiPanelProps {
   result: ExtractionResponse;
+  /** A live gate check result from the sidebar's "verify live" button, if it has been
+   *  used this session — replaces the static corpus-reference numbers when present. */
+  liveGateCheck?: GateCorpusCheckResult | null;
 }
 
 /**
@@ -106,7 +152,7 @@ export interface RoiPanelProps {
  * Both run through the same editable throughput/loaded-cost assumptions, so a viewer sees
  * the dollar impact under their own numbers, not just the illustrative defaults.
  */
-export default function RoiPanel({ result }: RoiPanelProps) {
+export default function RoiPanel({ result, liveGateCheck }: RoiPanelProps) {
   const idPrefix = useId();
   const [throughputLow, setThroughputLow] = useState(DEFAULT_REVIEWER_ASSUMPTION.throughputPerDayLow);
   const [throughputHigh, setThroughputHigh] = useState(DEFAULT_REVIEWER_ASSUMPTION.throughputPerDayHigh);
@@ -129,16 +175,11 @@ export default function RoiPanel({ result }: RoiPanelProps) {
     result.decision === 'REJECTED' ? reviewerMinutesAvoided(1, assumption) : null;
   const thisDocDollars = thisDocMinutes ? minutesToDollars(thisDocMinutes, loadedCostPerHour) : null;
 
-  const corpusMinutes = reviewerMinutesAvoided(CORPUS_REFERENCE.rejectedCount, assumption);
+  const corpus = summarizeCorpus(liveGateCheck);
+  const corpusMinutes = reviewerMinutesAvoided(corpus.rejectedCount, assumption);
   const corpusDollars = minutesToDollars(corpusMinutes, loadedCostPerHour);
-  const corpusContainmentPct = (
-    (CORPUS_REFERENCE.containedCount / CORPUS_REFERENCE.adversarialTotal) *
-    100
-  ).toFixed(1);
-  const corpusRejectionPct = (
-    (CORPUS_REFERENCE.rejectedCount / CORPUS_REFERENCE.adversarialTotal) *
-    100
-  ).toFixed(1);
+  const corpusContainmentPct = ((corpus.containedCount / corpus.adversarialTotal) * 100).toFixed(1);
+  const corpusRejectionPct = ((corpus.rejectedCount / corpus.adversarialTotal) * 100).toFixed(1);
 
   return (
     <div className={`${styles.card} ${styles[`tone_${admission.tone}`]}`}>
@@ -173,11 +214,13 @@ export default function RoiPanel({ result }: RoiPanelProps) {
         </dl>
       </div>
 
-      <details className={styles.details}>
+      <details className={styles.details} open={corpus.isLive}>
         <summary className={styles.summary}>
           <Chevron />
           See the proof: cost story across the full eval corpus
-          <span className={styles.staticBadge}>static reference, not computed live</span>
+          <span className={corpus.isLive ? styles.liveBadge : styles.staticBadge}>
+            {corpus.badgeText}
+          </span>
         </summary>
         <div className={styles.detailsBody}>
           <div className={styles.assumptions}>
@@ -228,31 +271,31 @@ export default function RoiPanel({ result }: RoiPanelProps) {
           </div>
 
           <div className={styles.corpusRef}>
-            <h4 className={styles.assumptionsTitle}>Proven on the evaluation corpus</h4>
+            <h4 className={styles.assumptionsTitle}>
+              {corpus.isLive ? 'Verified live, just now' : 'Proven on the evaluation corpus'}
+            </h4>
             <dl className={styles.facts}>
               <div>
                 <dt>Containment (never reached the paid tier)</dt>
                 <dd className={styles.mono}>
-                  {CORPUS_REFERENCE.containedCount}/{CORPUS_REFERENCE.adversarialTotal} (
-                  {corpusContainmentPct}%)
+                  {corpus.containedCount}/{corpus.adversarialTotal} ({corpusContainmentPct}%)
                 </dd>
               </div>
               <div>
                 <dt>Out-of-domain rejection rate</dt>
                 <dd className={styles.mono}>
-                  {CORPUS_REFERENCE.rejectedCount}/{CORPUS_REFERENCE.adversarialTotal} ({corpusRejectionPct}
-                  %)
+                  {corpus.rejectedCount}/{corpus.adversarialTotal} ({corpusRejectionPct}%)
                 </dd>
               </div>
               <div>
                 <dt>False rejections on valid documents</dt>
                 <dd className={styles.mono}>
-                  {CORPUS_REFERENCE.falseRejectCount}/{CORPUS_REFERENCE.nonAdversarialTotal} — must be zero
+                  {corpus.falseRejectCount}/{corpus.nonAdversarialTotal} — must be zero
                 </dd>
               </div>
               <div>
                 <dt>Spend avoided across the corpus</dt>
-                <dd className={styles.mono}>{fmtUsd(CORPUS_REFERENCE.spendAvoidedUsd)}</dd>
+                <dd className={styles.mono}>{fmtUsd(corpus.spendAvoidedUsd)}</dd>
               </div>
               <div>
                 <dt>Reviewer time avoided, at your assumptions above</dt>
@@ -262,11 +305,7 @@ export default function RoiPanel({ result }: RoiPanelProps) {
                 </dd>
               </div>
             </dl>
-            <p className={styles.sourceNote}>
-              35-document synthetic corpus, commit <code>{CORPUS_REFERENCE.sourceCommit}</code> — these
-              five numbers are fixed reference figures from that run, not computed by this page.
-              Reproduce them yourself: <code>npm run eval</code> in the repository.
-            </p>
+            <p className={styles.sourceNote}>{corpus.sourceNote}</p>
           </div>
         </div>
       </details>

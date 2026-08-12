@@ -23,6 +23,7 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { Decision, ExtractionResponse, SourceTier } from '@/types/contract';
 import { accuracyAtCoverage, pointAtCoverage } from '@/engine/confidence';
@@ -36,7 +37,7 @@ import { ANCHOR_TODAY, CORPUS_DIR, GROUND_TRUTH_PATH } from './generate-corpus';
 const RESULTS_PATH = path.join(path.dirname(GROUND_TRUTH_PATH), 'results.md');
 const TARGET_COVERAGE = 0.8;
 
-interface Expected {
+export interface Expected {
   filename: string;
   expected_class: string;
   expected_basis: string;
@@ -60,7 +61,7 @@ interface Outcome {
 // CSV (RFC 4180 — the notes column is quoted and contains commas)
 // ---------------------------------------------------------------------------
 
-function parseCsv(text: string): Expected[] {
+export function parseCsv(text: string): Expected[] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
@@ -242,8 +243,13 @@ function pct(n: number): string {
  * badly it is illegible): a badly-captured real document is not out of domain, and it
  * must never count toward the rejection rate the same way a wallpaper or a CRM
  * screenshot does — see the doc's own ground-truth notes.
+ *
+ * Exported so `eval/copy-eval-corpus.ts` can bake the same classification into
+ * `public/eval-corpus/manifest.json` at generate time — one source of truth for what
+ * counts as adversarial, not a second hand-copied condition (docs/DECISIONS.md's live
+ * gate-check entry).
  */
-function isAdversarial(expected: Expected): boolean {
+export function isAdversarial(expected: Expected): boolean {
   return expected.expected_class === 'NOT_A_DOCUMENT' || expected.expected_class === 'OTHER_DOCUMENT';
 }
 
@@ -465,7 +471,16 @@ function renderReport(outcomes: Outcome[], hasKey: boolean): string {
   return lines.join('\n');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+// Guarded the same way generate-corpus.ts guards its own main() — parseCsv/isAdversarial
+// are exported for eval/copy-eval-corpus.ts to reuse (docs/DECISIONS.md's live gate-check
+// entry), and without this guard, importing either one would silently trigger a full
+// npm run eval as an unwanted side effect of the import itself.
+const invokedDirectly =
+  process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

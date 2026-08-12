@@ -9,9 +9,11 @@ import UploadZone, {
 } from '@/components/UploadZone';
 import { SAMPLE_DOCS, sampleFileName, type SampleDoc } from '@/lib/sample-docs';
 import type { ExtractionResponse } from '@/types/contract';
+import type { GateCorpusCheckResult } from '@/types/gate-check';
 import styles from './page.module.css';
 
 const ENDPOINT = '/api/extract';
+const GATE_CHECK_ENDPOINT = '/api/eval-gate';
 
 /**
  * Client-side abort. The pipeline budget is 45 s (contract `PIPELINE_BUDGET_MS`);
@@ -131,6 +133,17 @@ function looksLikeResponse(value: unknown): value is ExtractionResponse {
   );
 }
 
+/** Same idea as `looksLikeResponse`, for the corpus-check response instead. */
+function looksLikeGateCheckResult(value: unknown): value is GateCorpusCheckResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<GateCorpusCheckResult>;
+  return (
+    typeof candidate.documentsChecked === 'number' &&
+    typeof candidate.adversarialTotal === 'number' &&
+    typeof candidate.containedCount === 'number'
+  );
+}
+
 /**
  * The demo (§10), in the v2 shell: a persistent rail carrying every input, and a
  * canvas carrying exactly one of four states — awaiting, processing, error,
@@ -160,6 +173,14 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [pendingSample, setPendingSample] = useState<string | null>(null);
+  // Deliberately separate from result/status: a structurally different result (a corpus
+  // summary, not a single document's verdict) that must stay triggerable whether or not a
+  // document has ever been extracted — see docs/DECISIONS.md's live gate-check entry.
+  const [gateCheckStatus, setGateCheckStatus] = useState<'idle' | 'busy' | 'done' | 'error'>(
+    'idle',
+  );
+  const [gateCheckResult, setGateCheckResult] = useState<GateCorpusCheckResult | null>(null);
+  const [gateCheckError, setGateCheckError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLElement>(null);
 
   const busy = status === 'busy';
@@ -316,6 +337,54 @@ export default function Home() {
     [submit],
   );
 
+  /** Runs the real admission gate against the real 35-document eval corpus, live,
+   *  server-side — $0 cost, since /api/eval-gate never constructs a VLM client at all
+   *  (docs/DECISIONS.md's live gate-check entry). Independent of document-extraction
+   *  state on purpose: someone should be able to verify the gate's numbers whether or not
+   *  they have uploaded anything yet. */
+  const runGateCheck = useCallback(async () => {
+    setGateCheckStatus('busy');
+    setGateCheckError(null);
+    try {
+      const response = await fetch(GATE_CHECK_ENDPOINT, { method: 'POST' });
+
+      if (response.status === 429) {
+        throw new UploadPrepError('Too many live checks. Wait a few minutes and try again.');
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        throw new UploadPrepError(
+          `The server returned ${response.status} without a JSON body.`,
+        );
+      }
+
+      const payload: unknown = await response.json();
+
+      if (!response.ok) {
+        const message =
+          typeof payload === 'object' && payload !== null
+            ? (payload as { error?: unknown }).error
+            : null;
+        throw new UploadPrepError(
+          safeMessage(message, `The live check failed (HTTP ${response.status}).`),
+        );
+      }
+
+      if (!looksLikeGateCheckResult(payload)) {
+        throw new UploadPrepError('The server replied with a response this build does not recognise.');
+      }
+
+      setGateCheckResult(payload);
+      setGateCheckStatus('done');
+    } catch (err) {
+      setGateCheckError(
+        err instanceof UploadPrepError ? err.message : 'Could not reach the server. Try again.',
+      );
+      setGateCheckStatus('error');
+    }
+  }, []);
+
   const reset = useCallback(() => {
     setStatus('idle');
     setResult(null);
@@ -372,6 +441,42 @@ export default function Home() {
                 </li>
               ))}
             </ul>
+          </div>
+
+          <div className={styles.gateCheck}>
+            <h2 className={styles.eyebrow}>Verify the admission gate, live</h2>
+            <button
+              type="button"
+              className={styles.sample}
+              onClick={() => void runGateCheck()}
+              disabled={gateCheckStatus === 'busy'}
+            >
+              <span className={styles.sampleHead}>
+                <span className={styles.sampleLabel}>
+                  {gateCheckStatus === 'busy' ? 'Running…' : 'Run the eval corpus check'}
+                </span>
+                {gateCheckStatus === 'busy' ? (
+                  <span className={styles.sampleLoading}>~30s, all 35 documents</span>
+                ) : null}
+              </span>
+              <span className={styles.sampleWhat}>
+                Runs the real gate against all 35 eval documents, right now — $0 cost, never
+                touches the paid model tier.
+              </span>
+            </button>
+            {gateCheckStatus === 'done' && gateCheckResult ? (
+              <p className={styles.gateCheckResult}>
+                ✓ {gateCheckResult.containedCount}/{gateCheckResult.adversarialTotal} contained
+                {' · '}
+                {gateCheckResult.rejectedCount}/{gateCheckResult.adversarialTotal} rejected
+                {' · '}
+                {gateCheckResult.falseRejectCount}/{gateCheckResult.nonAdversarialTotal} false-rejects
+                {' · '}${gateCheckResult.spendAvoidedUsd.toFixed(2)} avoided
+              </p>
+            ) : null}
+            {gateCheckStatus === 'error' && gateCheckError ? (
+              <p className={styles.gateCheckError}>{gateCheckError}</p>
+            ) : null}
           </div>
 
           <p className={styles.railNote}>
@@ -459,7 +564,7 @@ export default function Home() {
 
           {status === 'done' && result ? (
             <div className={styles.fade}>
-              <ResultPanel result={result} />
+              <ResultPanel result={result} liveGateCheck={gateCheckResult} />
             </div>
           ) : null}
 
