@@ -9,6 +9,7 @@ import type {
 } from '@/types/contract';
 import DateInventory, { findSelectedIndex, humanizeEnum } from './DateInventory';
 import PipelineRail from './PipelineRail';
+import RoiPanel from './RoiPanel';
 import WhyPanel from './WhyPanel';
 import styles from './ResultPanel.module.css';
 
@@ -476,6 +477,9 @@ export default function ResultPanel({ result }: ResultPanelProps) {
           </div>
         </details>
       </div>
+
+      {/* What the admission gate's cost story means, for this document and at scale. */}
+      <RoiPanel result={result} />
     </section>
   );
 }

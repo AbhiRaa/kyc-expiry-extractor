@@ -48,3 +48,26 @@ export function reviewerMinutesAvoided(
   const perDoc = minutesPerDocument(assumption);
   return { low: touchesAvoided * perDoc.low, high: touchesAvoided * perDoc.high };
 }
+
+export interface DollarRange {
+  low: number;
+  high: number;
+}
+
+/**
+ * Illustrative default only, not a client-stated figure the way `DEFAULT_REVIEWER_ASSUMPTION`
+ * is — a KYC reviewer's fully-burdened hourly cost (salary + benefits + overhead) varies
+ * enormously by market and organization. Always surfaced as an editable field in the ROI
+ * panel UI, never presented as a measured fact.
+ */
+export const DEFAULT_LOADED_COST_PER_HOUR_USD = 35;
+
+/** Converts a reviewer-minutes range into a dollar range at a given fully-burdened hourly
+ *  rate. Kept as a separate step from `reviewerMinutesAvoided` rather than folded into it:
+ *  minutes are backed by the client's own stated throughput figure, dollars are backed by
+ *  whatever the viewer's own reviewer cost actually is — two independently editable
+ *  assumptions, not one compound one. */
+export function minutesToDollars(minutes: MinutesRange, loadedCostPerHourUsd: number): DollarRange {
+  const perMinute = loadedCostPerHourUsd / 60;
+  return { low: minutes.low * perMinute, high: minutes.high * perMinute };
+}

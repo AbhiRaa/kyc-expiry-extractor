@@ -813,3 +813,65 @@ Verified against the real document: the fix fires `MIXED_ORIENTATION_SUSPECTED` 
 as intended. Verified against the full 35-document synthetic corpus: zero false
 positives — the anomaly never fires on any existing document, and every decision,
 coverage, and accuracy number is unchanged.
+
+## 12. The ROI panel is per-document, not a live aggregate — and why
+
+The last of the three items deferred after the gate + CRM emission shipped (ROI panel,
+"try to break it" mode, maturity-ladder README section). `src/lib/reviewer-economics.ts`
+was already built specifically for this (its own header comment says so); nothing in the
+UI had ever read `ExtractionResponse.admission` before this.
+
+### F1 — why the panel can't show live "7/7 containment" the way `eval/run.ts` does
+
+`src/app/page.tsx` holds exactly one `ExtractionResponse | null` in state, replaced on
+every upload — no history array, no `localStorage`, nothing accumulated across requests.
+`eval/run.ts`'s containment/rejection rates are corpus statistics computed over a labeled
+`outcomes[]` array with known ground truth ("is this document adversarial"); a single
+live upload has neither a corpus to aggregate over nor a ground-truth label to score
+itself against. Building live aggregation would mean introducing a genuinely new
+client-side persistence pattern — a real feature, not a UI tweak, and out of scope for
+"keep styling the same, nothing should break."
+
+### F2 — the resolution: two honestly-labeled sections, not one blended number
+
+1. **This document** — live, from `result.admission` (decision, `spend_avoided_usd`, and
+   one reviewer-touch avoided when `decision === 'REJECTED'`). The only thing a single
+   request can honestly report about itself.
+2. **Proven on the evaluation corpus** — the real numbers from `eval/results.md` as of
+   commit `b7d8b62` (containment 7/7, rejection 4/7, false-reject 0/28, spend avoided
+   $0.88), hardcoded as named constants (`CORPUS_REFERENCE`, `src/components/RoiPanel.tsx`)
+   with a source note pointing at the commit and `npm run eval` — the exact provenance
+   pattern the README already uses (`a709143`/`d435d22`) for the same reason: a number
+   with no stated source is unfalsifiable, and this codebase's whole ethos is "nothing is
+   hand-written, everything is reproducible."
+
+Both sections run through the *same* editable throughput/loaded-cost inputs
+(`reviewerMinutesAvoided`, and the new `minutesToDollars`/`DEFAULT_LOADED_COST_PER_HOUR_USD`
+added to `reviewer-economics.ts` for this), so a viewer sees the dollar impact under their
+own numbers on both the live document and the corpus reference, not two disconnected
+figures.
+
+### F3 — `DEFAULT_LOADED_COST_PER_HOUR_USD` is explicitly illustrative, not client-stated
+
+Unlike `DEFAULT_REVIEWER_ASSUMPTION` (the client's own stated 20-30 docs/reviewer/day,
+§8), no client ever gave a loaded reviewer-hour cost — $35 is a placeholder default,
+labeled as an editable assumption in the UI copy itself, not presented as researched or
+measured. Kept as a separate function (`minutesToDollars`) rather than folded into
+`reviewerMinutesAvoided`, since the two assumptions have different provenance and should
+stay independently editable rather than compounded into one function that obscures which
+number came from where.
+
+### F4 — placement and styling: purely additive, no existing pattern reused across files
+
+`RoiPanel.tsx`/`RoiPanel.module.css` follow the `WhyPanel.tsx` precedent exactly — its own
+`'use client'`, its own state, its own CSS module, imported into `ResultPanel.tsx` and
+rendered as a new standalone card after the existing final bento block. Not injected into
+the existing 2-column `.bento` grid (`ResultPanel.module.css`), which would have
+unbalanced a grid built for exactly two children. The card recipe, tone system (`--tone-fg`
+/`--tone-bg`/`--tone-border`), eyebrow labels, and `.facts` label/value grid are duplicated
+from `ResultPanel.module.css` rather than cross-imported — consistent with every other
+sub-component's CSS module in this codebase, each of which is self-contained. This is the
+first numeric `<input>` in the app; styled to the existing `--surface-alt`/`--border`/mono
+conventions with native spinner arrows removed (visual noise against the app's otherwise
+flat control language), relying on the global `:focus-visible` treatment already defined
+in `globals.css` rather than introducing new focus styling.

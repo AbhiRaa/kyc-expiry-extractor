@@ -1,0 +1,165 @@
+/**
+ * The ROI panel — same card recipe and tone system as ResultPanel/PipelineRail/WhyPanel
+ * (border/background/radius, --tone-fg/--tone-bg/--tone-border on one wrapper class),
+ * duplicated here rather than cross-imported since each component's CSS module is
+ * self-contained throughout this codebase.
+ */
+
+.card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tone_ok {
+  --tone-fg: var(--ok-fg);
+  --tone-bg: var(--ok-bg);
+  --tone-border: var(--ok-border);
+}
+.tone_warn {
+  --tone-fg: var(--warn-fg);
+  --tone-bg: var(--warn-bg);
+  --tone-border: var(--warn-border);
+}
+.tone_neutral {
+  --tone-fg: var(--neutral-fg);
+  --tone-bg: var(--neutral-bg);
+  --tone-border: var(--neutral-border);
+}
+
+.eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.thisDoc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admissionPill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--tone-fg);
+  color: var(--on-tone);
+}
+
+.admissionDetail {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 3px;
+}
+
+.facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.facts dt {
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.facts dd {
+  font-size: 13.5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.assumptions,
+.corpusRef {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assumptionsTitle {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.inputRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.inputRow label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  flex: 1 1 160px;
+}
+
+.input {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  width: 100%;
+  /* Native number spinner arrows are visually noisy against the app's flat, understated
+     control language elsewhere (no other input in this app has one) — remove them, the
+     field is still a real <input type="number"> for validation and mobile numeric keyboards. */
+  appearance: textfield;
+}
+.input::-webkit-outer-spin-button,
+.input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.inputUnit {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.sourceNote {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+.sourceNote code {
+  font-family: var(--font-mono);
+}
