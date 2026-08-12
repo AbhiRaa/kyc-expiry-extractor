@@ -205,6 +205,13 @@ export interface NormalizedPage {
   quality: QualityMetrics;
   /** Advisory quality findings for this page (T0-A). */
   reasonCodes: ReasonCode[];
+  /** The document-quad detection this page's own perspective-correction step already ran
+   *  (§11.2 #19), captured before correction consumes it — reused by the admission gate
+   *  (gate.ts) rather than recomputed. Null when no document-shaped quad was found.
+   *  `perspectiveCorrected === true` also counts as "a shape was found" for the gate: a
+   *  quad that got consumed and rectified is stronger evidence than one merely detected. */
+  quad: DocumentQuad | null;
+  exifBytesLength: number | null;
 }
 
 export interface NormalizedDocument {
@@ -927,6 +934,12 @@ interface RasterPage {
   height: number;
   rotationAppliedDeg: number;
   textLayer: string | null;
+  /** Size of the raw EXIF TIFF blob sharp read off the source, or null when the format
+   *  cannot carry one (PDF) or none was present. Used as a coarse, deliberately-simple
+   *  proxy for "does this look like a real camera capture" by the admission gate's
+   *  screen-capture signal — see gate.ts and docs/DECISIONS.md's Known Limits entry on
+   *  why this is a proxy rather than real Make/Model tag parsing. */
+  exifBytesLength: number | null;
 }
 
 interface RenderResult {
@@ -957,6 +970,7 @@ async function renderImage(bytes: Uint8Array, mime: SupportedMime): Promise<Rend
   const pipeline = sharp(decodable, { failOn: 'error', page: 0, pages: 1 });
   const metadata = await pipeline.metadata();
   const orientation = metadata.orientation ?? 1;
+  const exifBytesLength = metadata.exif?.length ?? null;
 
   // §11.1 #15 / §7.2 — before anything else touches the pixels.
   let oriented = sharp(decodable, { failOn: 'error', page: 0, pages: 1 }).autoOrient();
@@ -982,6 +996,7 @@ async function renderImage(bytes: Uint8Array, mime: SupportedMime): Promise<Rend
         height: info.height,
         rotationAppliedDeg: EXIF_ORIENTATION_DEGREES[orientation] ?? 0,
         textLayer: null,
+        exifBytesLength,
       },
     ],
     pageCount: 1,
@@ -1122,6 +1137,8 @@ async function renderPdf(bytes: Uint8Array, options: NormalizeOptions): Promise<
           height: Math.ceil(viewport.height),
           rotationAppliedDeg: page.rotate,
           textLayer: text || null,
+          // A rasterized PDF page never carries camera EXIF.
+          exifBytesLength: null,
         });
       } else {
         // Text-only page: its text still reaches TB, it just has no raster of its own.
@@ -1132,6 +1149,7 @@ async function renderPdf(bytes: Uint8Array, options: NormalizeOptions): Promise<
           height: rasters[0].height,
           rotationAppliedDeg: page.rotate,
           textLayer: text || null,
+          exifBytesLength: null,
         });
       }
       page.cleanup();
@@ -1186,7 +1204,8 @@ async function finishPage(
   let perspectiveCorrected = false;
 
   const work = await grayscaleWorkRaster(png);
-  let quad = detectDocumentQuad(work.gray, work.width, work.height);
+  const detectedQuad = detectDocumentQuad(work.gray, work.width, work.height);
+  let quad = detectedQuad;
 
   if (
     options.correctPerspective &&
@@ -1258,6 +1277,8 @@ async function finishPage(
     textLayer: raster.textLayer,
     quality,
     reasonCodes,
+    quad: detectedQuad,
+    exifBytesLength: raster.exifBytesLength,
   };
 }
 
@@ -1294,7 +1315,7 @@ export async function cropAndDownscale(
  * full resolution. Every metric and the quad detector run on this, which is what makes
  * the thresholds above resolution-independent and therefore meaningful.
  */
-async function grayscaleWorkRaster(
+export async function grayscaleWorkRaster(
   png: Buffer,
 ): Promise<{ gray: Uint8Array; width: number; height: number; scale: number }> {
   const { data, info } = await sharp(png)

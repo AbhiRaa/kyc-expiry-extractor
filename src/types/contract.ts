@@ -63,7 +63,13 @@ export type ValidityBasis = (typeof VALIDITY_BASES)[number];
 
 export type Verdict = 'VALID' | 'EXPIRED' | 'NOT_APPLICABLE' | 'INDETERMINATE';
 
-export type Decision = 'AUTO_PASS' | 'AUTO_FAIL' | 'REVIEW';
+/**
+ * `REJECTED` is a fourth, terminal decision, distinct from `REVIEW`: `REVIEW` means a
+ * human should look at this; `REJECTED` means it never enters the queue at all — the
+ * admission gate (Stage -1, see `src/pipeline/gate.ts`) found confident evidence the
+ * input isn't a KYC-relevant document before any extraction tier ran.
+ */
+export type Decision = 'AUTO_PASS' | 'AUTO_FAIL' | 'REVIEW' | 'REJECTED';
 
 export type SourceTier = 'TA_MRZ' | 'TA_PDF417' | 'TB_OCR' | 'TC_VLM' | 'NONE';
 
@@ -119,6 +125,15 @@ export const REASON_CODES = [
   'CORRUPT_FILE',
   'ENCRYPTED_PDF',
 
+  // Admission gate (Stage -1 / A-series, v2 client rework) — fired before any extraction
+  // tier runs. Distinct from CLASS_UNRECOGNIZED (a tier tried and couldn't classify what
+  // it saw) and from NOT_A_DOCUMENT (classify.ts's post-hoc, evidence-of-absence finding):
+  // these mean nothing was ever tried, because the gate was confident it shouldn't be.
+  'OUT_OF_DOMAIN',
+  'NOT_A_DOCUMENT_IMAGE',
+  'SCREEN_CAPTURE_NOT_DOCUMENT',
+  'NO_DOMAIN_SIGNAL',
+
   // Extraction
   'NO_DATES_FOUND',
   'NO_EXPIRY_SEMANTICS',
@@ -158,6 +173,47 @@ export const INTEGRITY_ANOMALIES = [
   'CHECKSUM_FAILED',
 ] as const;
 export type IntegrityAnomaly = (typeof INTEGRITY_ANOMALIES)[number];
+
+// ---------------------------------------------------------------------------
+// Admission gate (Stage -1). Three-way, not binary: it authorizes budget, not just
+// entry. See docs/DECISIONS.md §8 for the full design record and the asymmetry rule.
+// ---------------------------------------------------------------------------
+
+export type AdmissionDecision = 'REJECT' | 'ADMIT_LIMITED' | 'ADMIT_FULL';
+
+export type GateSignalName = 'DOCUMENT_LIKENESS' | 'SCREEN_CAPTURE' | 'POSITIVE_DOMAIN_SIGNAL';
+
+/**
+ * Mirrors `FoundDate.eliminated_by` — the same "make the reasoning legible, not magical"
+ * pattern applied one layer earlier. `outcome` is deliberately never a graded confidence:
+ * the asymmetry rule (docs/DECISIONS.md A2) requires each signal to be either a confident
+ * finding or nothing at all, with no smeared-out "sort of" that could be misread as
+ * evidence strong enough to reject on.
+ */
+export interface GateSignalOutcome {
+  signal: GateSignalName;
+  outcome: 'CONFIDENT_NEGATIVE' | 'CONFIDENT_POSITIVE' | 'UNCERTAIN' | 'NOT_FOUND';
+  detail: string;
+  /** The individual measurements that fed the outcome, e.g. "periodicity=0.02". */
+  evidence: string[];
+}
+
+export interface AdmissionInfo {
+  decision: AdmissionDecision;
+  /** Only the signals actually evaluated — cost-ordered, stops at the first confident
+   *  finding. A REJECT via signal 1 alone has a 1-entry array; that brevity is itself
+   *  informative (the cheapest possible path) for the "why?" panel. */
+  signals: GateSignalOutcome[];
+  /**
+   * Estimated VLM spend this document was kept from costing, in USD. Populated for
+   * REJECT (a flat upper-bound estimate — nothing ran, so this is necessarily
+   * hypothetical) and for ADMIT_LIMITED (computed by the router once it reaches the
+   * point it would have escalated to TC — zero when TA/TB would have resolved the
+   * document anyway and the block was never consequential). Null for ADMIT_FULL, where
+   * nothing was avoided.
+   */
+  spend_avoided_usd: number | null;
+}
 
 // ---------------------------------------------------------------------------
 // Response shape
@@ -254,6 +310,10 @@ export interface ExtractionResponse {
   quality: QualityMetrics;
   timing_ms: TimingMs;
   cost_usd: number;
+  /** Absent only on the pre-existing T0-level rejection path (corrupt/unsupported file),
+   *  which never reaches the gate at all — see rejectionResponse() in router.ts. Every
+   *  other path, including a gate REJECT, populates this. */
+  admission?: AdmissionInfo;
 }
 
 // ---------------------------------------------------------------------------

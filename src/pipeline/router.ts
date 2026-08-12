@@ -22,6 +22,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  type AdmissionInfo,
   type Decision,
   type DocumentClass,
   type ExtractionResponse,
@@ -41,10 +42,12 @@ import {
   evaluateValidity,
   hasExplicitNonExpiringLabel,
 } from '@/engine/validity';
+import { type GateInput, runAdmissionGate } from './gate';
 import {
   cropAndDownscale,
   DOWNSCALE_LONG_EDGE,
   isNormalized,
+  type NormalizedPage,
   type NormalizeOutcome,
   rejectionToTierResult,
 } from './normalize';
@@ -60,7 +63,7 @@ import {
   type OcrRunner,
   reconstructLines,
 } from './tier-b-ocr';
-import { runTierCVlm } from './tier-c-vlm';
+import { ESTIMATED_DUAL_CALL_COST_USD, runTierCVlm } from './tier-c-vlm';
 import type { VlmClient } from './vlm-client';
 
 /**
@@ -139,6 +142,25 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
   const doc = input.outcome;
   const page = doc.pages[0];
   const normalizeMs = Date.now() - started;
+
+  // --- Stage -1: admission gate ---------------------------------------------
+  // Runs before any extraction tier, on pixel statistics and (at most) one cheap OCR
+  // presurvey — see gate.ts for the full design record (docs/DECISIONS.md §8). A gate
+  // exception is not confident negative evidence, so it fails OPEN to ADMIT_FULL, never
+  // closed to REJECT — the asymmetry rule applies to failure modes too, not just to the
+  // signals themselves.
+  const gateStarted = Date.now();
+  let admission: AdmissionInfo = await runAdmissionGate(gateInputFor(page, input.ocr)).catch((error) => {
+    logTierFailure('GATE', error);
+    return { decision: 'ADMIT_FULL', signals: [], spend_avoided_usd: null };
+  });
+  const gateMs = Date.now() - gateStarted;
+
+  if (admission.decision === 'REJECT') {
+    return gateRejectedResponse(requestId, admission, page, today, Date.now() - started, normalizeMs, gateMs);
+  }
+  const admitLimited = admission.decision === 'ADMIT_LIMITED';
+
   const tierStarted = Date.now();
 
   const reasonCodes: ReasonCode[] = [...page.reasonCodes];
@@ -243,10 +265,19 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
   const deterministicWon = (mrzOk || barcodeOk) && anomalies.length === 0;
   const groundingTokens = tbResult?.grounding_tokens ?? [];
 
-  // --- TC: only when TA and TB both abstained ------------------------------
+  // --- TC: only when TA and TB both abstained, AND the gate admits it -------
   let tcResult: TierResult | null = null;
   const needVlm = !deterministicWon && (!tbResult || tbResult.abstained);
-  if (needVlm && input.vlmClient && withinBudget(started, budgetMs, 9000)) {
+  if (needVlm && admitLimited) {
+    // The gate found no positive domain signal (NO_DOMAIN_SIGNAL) and capped this
+    // document at ADMIT_LIMITED — the paid tier is hard-blocked regardless of what TA/TB
+    // returned. This does NOT touch TA/TB themselves, which already ran unconditionally
+    // above: a document that actually decoded a barcode or MRZ cleanly already set
+    // `deterministicWon = true` and never reaches this branch at all, so a genuinely
+    // strong deterministic result is never suppressed by gate uncertainty.
+    admission = { ...admission, spend_avoided_usd: ESTIMATED_DUAL_CALL_COST_USD };
+    reasonCodes.push('NO_DOMAIN_SIGNAL');
+  } else if (needVlm && input.vlmClient && withinBudget(started, budgetMs, 9000)) {
     // A phone-scanned "book spread" of an open passport routinely captures a second,
     // unrelated page above the bio-data page in the same shot — TC attending to the whole
     // cluttered composite reads worse than TC attending to a focused crop of the document
@@ -407,8 +438,10 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
       total: totalMs,
       normalize: normalizeMs,
       tier: Date.now() - tierStarted,
+      gate: gateMs,
     },
     cost_usd: Number(costUsd.toFixed(6)),
+    admission,
   };
 }
 
@@ -436,6 +469,20 @@ function safely(fn: () => TierResult): TierResult | null {
 /** zxing-wasm wants a plain view; Buffer's ArrayBufferLike does not satisfy it directly. */
 function toUint8(buffer: Buffer): Uint8Array {
   return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.length));
+}
+
+function gateInputFor(page: NormalizedPage, ocr?: OcrRunner): GateInput {
+  return {
+    fullResolution: page.fullResolution,
+    fullWidth: page.fullWidth,
+    fullHeight: page.fullHeight,
+    downscaled: page.downscaled,
+    quad: page.quad,
+    perspectiveCorrected: page.perspectiveCorrected,
+    exifBytesLength: page.exifBytesLength,
+    textLayer: page.textLayer,
+    ocr,
+  };
 }
 
 /**
@@ -614,6 +661,63 @@ function rejectionResponse(
     timing_ms: { total: totalMs, normalize: totalMs, tier: 0 },
     cost_usd: 0,
   };
+}
+
+/**
+ * Terminal response for a gate REJECT — deliberately NOT built on top of
+ * `rejectionResponse()` above, even though the shapes look similar. That one serves
+ * T0-level "the bytes are unreadable" failures and correctly stays `REVIEW`: a broken
+ * upload deserves a human's attention. A confidently out-of-domain image is a different
+ * fact — the gate is SURE this was never a candidate — and must be `REJECTED` instead,
+ * so it never occupies a review queue slot.
+ */
+function gateRejectedResponse(
+  requestId: string,
+  admission: AdmissionInfo,
+  page: NormalizedPage,
+  today: Date,
+  totalMs: number,
+  normalizeMs: number,
+  gateMs: number,
+): ExtractionResponse {
+  return {
+    request_id: requestId,
+    document: { class: 'NOT_A_DOCUMENT', class_confidence: 0, issuer: null, pages: 1, side: 'N/A' },
+    validity: {
+      basis: 'UNDETERMINED',
+      date: null,
+      date_raw: null,
+      rule_applied: 'Rejected at the admission gate before any extraction tier ran',
+      verdict: 'NOT_APPLICABLE',
+      days_remaining: null,
+      evaluated_at: today.toISOString(),
+      timezone_policy: TIMEZONE_POLICY,
+    },
+    decision: 'REJECTED',
+    // The gate's own certainty in a confident-negative finding, not a fused score — no
+    // tier ran, so there is nothing to fuse.
+    confidence: 0.9,
+    reason_codes: dedupe(['OUT_OF_DOMAIN', ...gateReasonCodes(admission)]),
+    evidence: { source_tier: 'NONE', label_text: null, snippet: null, bbox: null },
+    integrity: { checksum_validated: null, checksum_detail: null, cross_source_agreement: null, anomalies: [] },
+    all_dates_found: [],
+    // T0 DID run successfully here, unlike rejectionResponse()'s path — real metrics
+    // exist, so report them rather than an empty stand-in.
+    quality: page.quality,
+    timing_ms: { total: totalMs, normalize: normalizeMs, tier: 0, gate: gateMs },
+    cost_usd: 0,
+    admission,
+  };
+}
+
+function gateReasonCodes(admission: AdmissionInfo): ReasonCode[] {
+  const codes: ReasonCode[] = [];
+  for (const signal of admission.signals) {
+    if (signal.outcome !== 'CONFIDENT_NEGATIVE') continue;
+    if (signal.signal === 'DOCUMENT_LIKENESS') codes.push('NOT_A_DOCUMENT_IMAGE');
+    if (signal.signal === 'SCREEN_CAPTURE') codes.push('SCREEN_CAPTURE_NOT_DOCUMENT');
+  }
+  return codes;
 }
 
 function emptyQuality(): QualityMetrics {

@@ -333,6 +333,16 @@ Blur and effective resolution are genuinely page-level properties and are unaffe
   `ReferenceError: DOMMatrix is not defined` at import.
 - The confidence weights are **hand-tuned**, not learned. A trained fusion is the
   productionization path — see the roadmap.
+- **The admission gate's "absent camera EXIF" signal is a size proxy, not real tag
+  parsing** — no Make/Model-reading dependency exists in this codebase, so it checks
+  whether sharp's raw `exif` buffer clears a byte-count floor rather than reading actual
+  camera tags. A real camera photo's EXIF block is reliably hundreds to thousands of
+  bytes; a screenshot's is typically none or trivial — but this also means the eval
+  corpus, which is entirely SVG/pdfkit-rendered and carries no EXIF at all by
+  construction, can never exercise this signal as a discriminator between "real photo"
+  and "screenshot": it reads `true` (absent) on every document in the corpus, in-domain
+  and adversarial alike. The chrome-structure check (§8 A3) is the real backstop this
+  relies on regardless — see A3 for why a single uniform band is never enough alone.
 
 ## 7. UI redesign (v2)
 
@@ -431,3 +441,152 @@ The mockup's processing card shows a static `est. 4.2s`. Elapsed time is already
 drive the stage list, so it is shown instead — same slot, same treatment, but a measurement
 rather than an estimate the pipeline may not keep. The stage list itself remains explicitly
 labelled as estimated, as in v1.
+
+---
+
+## 8. Admission gate (v2) — client feedback rework
+
+Post-submission client review of the delivered v1 system, not brief-driven — its own
+`A1…` series, the same pattern `## 7`'s `V1–V8` uses for later, non-brief work.
+
+### A1 — why the gate exists
+
+The client's architectural criticism: there was no gatekeeping. A CRM screenshot, a
+wallpaper — junk input flowed through normalization, MRZ, PDF417 and OCR before landing
+in `REVIEW`, paying tier cost on noise that was never going to resolve. Their cautionary
+example: a chatbot deployment with no input gating that burned tokens answering
+off-topic prompts. A new Stage -1 admission gate (`src/pipeline/gate.ts`) runs before any
+extraction tier and authorizes a *budget*, not just entry — three-way, not binary:
+`REJECT` (confidently out of domain, no tier runs, terminal — `Decision.REJECTED`, a
+fourth value distinct from `REVIEW`: `REVIEW` means a human looks, `REJECTED` means it
+never enters the queue), `ADMIT_LIMITED` (uncertain — free tiers only, hard-blocked from
+ever reaching TC), `ADMIT_FULL` (positive domain signal found — full pipeline eligible).
+
+### A2 — the asymmetry rule
+
+False-rejecting a valid document is worse than wasting an OCR pass, or even a VLM call —
+the client's own framing. Encoded as a structural rule, not a tuning knob: **`REJECT` can
+only be reached through confident *negative* evidence. It can never be reached merely
+through *absence of positive* evidence** — that caps admission at `ADMIT_LIMITED`, never
+lower. "I found no proof this is a document" and "I found proof this is not a document"
+are different epistemic states, and collapsing them into one path is exactly how a real
+document photographed at a bad angle would get silently dropped.
+
+### A3 — three signals, cost-ordered, stop at the first confident rejection
+
+1. **Document-likeness** — pixel statistics only, no OCR. Confident reject
+   (`NOT_A_DOCUMENT_IMAGE`) only if no document-shaped quad, no structured text-row bands
+   (`rowInkHistogram`/`countTextBands` — pulled out of `estimateSkewAngle`'s own private
+   row-binning closure in `normalize.ts` as a standalone, reusable measurement), **and**
+   the frame is flat or tonally extreme. Any one weak signal alone is not enough.
+2. **Screen-capture detection** — the nuance a CRM screenshot exposes: it *passes*
+   signal 1, since it is genuinely text-dense in structured rows. The tell is the
+   *conjunction* of screen-native evidence (resolution match, or absent camera EXIF —
+   see the Known Limits entry above) **and** genuine application-chrome structure, never
+   "is this a screenshot" alone — a legitimate screenshot of a real document is an
+   existing, celebrated first-class input path in this codebase (G9) and must never be
+   rejected.
+3. **Positive domain signal** — the only signal that costs anything: a coarse PDF417
+   check on the already-downscaled buffer, then (only if needed) a single cheap
+   low-resolution OCR presurvey (`presurveyOcrRunner`, `tier-b-ocr.ts` — not a second
+   engine, the same process-wide Tesseract worker fed a smaller image) checking MRZ
+   band geometry and a filtered keyword list. A hit → `ADMIT_FULL`. Nothing found →
+   `NO_DOMAIN_SIGNAL`, caps at `ADMIT_LIMITED` — never `REJECT`, per A2.
+
+**A real implementation bug, caught by testing against the actual corpus rather than
+synthetic fixtures alone, worth recording in full because the failure mode generalizes
+beyond this one signal.** The first working version of signal 2 scanned inward from each
+edge in thin strips, looking for individual uniform-colour "bands," and treated two
+same-edge bands as a stacked pair of distinct UI bars. It shipped broken: a driving
+licence's single accent-coloured header contains a title or a state name, and at
+strip-level resolution that text reliably fragments one visual band into several small
+ones with different local means. The stacked-band count then misread the fragments of
+*one* header as *multiple* distinct bars, and every card-shaped document in the corpus —
+every driving licence, passport, residence permit, insurance card — started rejecting
+with `appChromePresent=true`. A first fix (bridging small positional gaps between
+fragments) was insufficient: this scan's own boundary imprecision produces small gaps in
+*both* the "real second band" case and the "text-interrupted single band" case, so gap
+size alone cannot tell them apart — a genuinely narrow gap between two truly distinct
+bars looks identical to a gap produced by nothing more than a mis-aligned strip boundary.
+
+The fix that actually held: **stop measuring at strip resolution at all.** v2 compares
+two large, *fixed-size* zones per edge (0–18% and 18–36% of the frame), each spanning
+enough area that a modest amount of text or an icon is a small minority of that zone's
+pixels and gets averaged away — the same reason a printed page's overall mean is not
+thrown off by its own body text. A header with a title on it now reads as one uniform
+zone; two genuinely different stacked bars still register as two zones with clearly
+different means, because that difference is the actual point of the two bars existing,
+not a measurement artefact. Verified directly against the real corpus (not just unit
+tests) after the fix: zero false `REJECT`s across every driving licence, passport,
+residence permit, and insurance card in the set — the documents that don't find a
+positive domain signal correctly fall back to `ADMIT_LIMITED`, per A2, rather than being
+rejected. **The general lesson, not specific to this one signal**: a heuristic that looks
+correct against a hand-built synthetic test fixture can still be wrong against real
+content shaped differently than the fixture assumed — the fixture in `gate.test.ts` that
+initially passed was accidentally too clean (a truly flat header colour, no text) to
+catch this at all; only running against the actual generated corpus surfaced it.
+
+### A4 — the "hardcoded bounding box" claim: investigated and found false, not assumed
+
+The client separately stated on a call that barcode/MRZ detection uses hardcoded
+positions, and asked how the system would find a barcode if a state relocated or
+reoriented it. **Checked directly against the code rather than taken on trust**:
+`decodePdf417` (`tier-a-pdf417.ts`) already does a full-frame `zxing-wasm` scan with
+`tryRotate: true, tryHarder: true` and no region parameter; `estimateMachineReadableZone`
+(`tier-b-ocr.ts`) is already geometry-derived from OCR line shape (fixed character
+lengths and alphabet ratio), not fixed coordinates. The client confirmed this was their
+own misstatement on the call, not a real bug — no fix was written for something that
+does not exist. Instead: three new eval documents (a rotated-90° barcode, an off-centre
+barcode, an edge-flush barcode — all valid, in-domain licences with real expiry dates)
+prove the existing detection holds empirically, not just by code inspection.
+
+### A5 — the gate's keyword list is derived by exclusion, not hand-duplicated
+
+`GATE_KEYWORDS` (`gate.ts`) is `CLASS_KEYWORDS` (`classify.ts`, now exported) filtered
+through an exclusion set — `'restrictions'`/`'endorsements'` (classify.ts's own comment
+already says these are "worth something only in combination, never alone"),
+`'bill date'`/`'total due'`/`'amount due'` (exactly a restaurant receipt's own phrasing),
+`'effective date'` (too generic across document types) — rather than a second,
+hand-copied list. This is not a style preference: the gate's bare "≥1 hit → admit"
+trigger has no margin check behind it, unlike `classifyDocument`'s own threshold logic,
+so it needed a stricter list — but `EMPLOYMENT_LETTER` and `MEDICAL_INSURANCE_CARD`
+terms must never be dropped, because docs 13/19/20/21 in the eval corpus only resolve
+correctly via `TC_VLM` today (no MRZ/barcode, so TB's correct abstention already means
+TC must run), and losing those classes' keyword signal would return `NO_DOMAIN_SIGNAL`
+on those exact documents, block TC, and regress them. Deriving by exclusion makes that
+constraint structural — a future edit to `classify.ts`'s own lexicon propagates
+automatically — rather than a maintenance promise, avoiding the exact silent-divergence
+risk **G11**'s finding already documents once in this codebase (`checksum_detail` vs. the
+raw AAMVA element stream).
+
+### A6 — `DocumentQuad` is threaded through, not recomputed
+
+T0's `finishPage` (`normalize.ts`) already runs `detectDocumentQuad` once per page for
+perspective-correction and `DOCUMENT_CROPPED` purposes, but previously discarded the
+result afterward. `NormalizedPage` now carries `quad` (captured before correction
+consumes it) and `exifBytesLength`, so the gate reuses T0's own detection rather than
+paying for a second full-frame quad-detection pass — recomputing it would be a little
+ironic for a feature that exists to eliminate redundant compute on documents that were
+never going to resolve.
+
+### A7 — containment and reviewer-minutes are separate metrics from rejection, not restatements of it
+
+The eval report (`eval/run.ts`, `eval/results.md`) originally reported one adversarial
+number: out-of-domain rejection rate, 4/7. That conflates two different claims and
+undersells the gate. **Containment** — did this document ever reach the paid VLM tier —
+is 7/7 (100%), not 4/7, because `ADMIT_LIMITED` hard-blocks TC escalation exactly as
+completely as `REJECT` does; it just leaves the document in `REVIEW` instead of
+terminating it. Computed directly off `cost_usd === 0` per adversarial document rather
+than by reasoning about which admission state implies zero spend, so the metric can't
+drift out of sync with a future change to what `ADMIT_LIMITED` blocks.
+
+**Human touches avoided**, by contrast, tracks only the `REJECT` count (4, this run) —
+`ADMIT_LIMITED` documents still land in `REVIEW` and still cost a reviewer's time, so
+they don't belong in a "touches avoided" count even though they're contained on spend.
+Converted to reviewer-minutes via `src/lib/reviewer-economics.ts`, using the client's own
+stated throughput (20–30 documents/reviewer/day) as the sole input constant, reported as
+a range rather than a point estimate — a single number would claim precision the "20–30"
+framing itself doesn't have. That module is deliberately factored out of `eval/run.ts`
+rather than inlined: it's the same formula the ROI panel (planned UI work) needs, and a
+second hand-tuned copy of "minutes per document" living in the UI would silently drift
+from this one the first time either got adjusted.

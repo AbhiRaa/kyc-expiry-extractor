@@ -1060,6 +1060,33 @@ export const runTesseractOcr: OcrRunner = async (image: Buffer): Promise<OcrPage
  */
 export const defaultOcrRunner: OcrRunner = runTesseractOcr;
 
+/** Long edge for the admission gate's presurvey pass — small enough to be cheap, large
+ *  enough that MRZ's fixed line-length/alphabet-ratio test and a handful of keyword
+ *  characters still read reliably. Not tuned against a resolution floor the way TB's
+ *  MIN_EFFECTIVE_DPI is: this pass only ever needs to find *something*, never to read a
+ *  field value, so a missed read here just falls through to "no positive signal found"
+ *  (§gate asymmetry rule), never to a wrong finding. */
+export const PRESURVEY_OCR_LONG_EDGE = 700;
+
+/**
+ * A fast, low-resolution OCR pass for the admission gate's Signal 3 (gate.ts) — never a
+ * substitute for TB's full-resolution pass, which still runs unconditionally afterward
+ * for every document the gate admits. Cheap because it recognizes far fewer pixels, not
+ * because it is a second engine: it goes through the same process-wide worker and the
+ * same `ocrQueue` serialization as `runTesseractOcr`, just fed a smaller image.
+ */
+export const presurveyOcrRunner: OcrRunner = async (image: Buffer): Promise<OcrPage> => {
+  const small = await sharp(image)
+    .resize({
+      width: PRESURVEY_OCR_LONG_EDGE,
+      height: PRESURVEY_OCR_LONG_EDGE,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .toBuffer();
+  return runTesseractOcr(small);
+};
+
 /**
  * Regroup a token stream into text lines: cluster by vertical overlap, order left to
  * right, and report each line's normalized bbox.

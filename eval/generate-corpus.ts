@@ -2136,6 +2136,490 @@ async function notADocument(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Admission gate (v2 client rework) — barcode-robustness proof, then adversarial set
+// ---------------------------------------------------------------------------
+
+/** Shared spec for the three barcode-robustness docs — same person, same everything,
+ *  only the barcode's transform/placement differs between them, isolating that as the
+ *  one variable under test. */
+function barcodeRobustnessSpec(): LicenceSpec {
+  return {
+    state: 'OH',
+    stateName: 'Ohio',
+    title: 'DRIVER LICENSE',
+    accent: '#0f4c3a',
+    licenceNumber: 'OH552091774',
+    familyName: 'NAKASHIMA',
+    firstName: 'ELENA',
+    middleName: 'R',
+    dob: '1991-05-19',
+    issue: '2023-05-19',
+    expiry: '2031-05-19',
+    sex: 'F',
+    heightIn: 64,
+    eyes: 'BRN',
+    street: '410 SPECIMEN CRESCENT',
+    city: 'COLUMBUS',
+    postalCode: '43215',
+    vehicleClass: 'D',
+    restrictions: 'NONE',
+    endorsements: 'NONE',
+  };
+}
+
+async function barcodeRobustnessBarcode(spec: LicenceSpec, discriminator: string): Promise<Buffer> {
+  const payload = buildAamvaPayload({
+    iin: '636023',
+    aamvaVersion: '10',
+    jurisdictionVersion: '01',
+    country: 'USA',
+    jurisdiction: spec.state,
+    licenceNumber: spec.licenceNumber,
+    familyName: spec.familyName,
+    firstName: spec.firstName,
+    middleName: spec.middleName,
+    dateOfBirth: spec.dob,
+    issue: spec.issue,
+    expiry: spec.expiry,
+    sex: '2',
+    heightIn: spec.heightIn,
+    eyes: spec.eyes,
+    street: spec.street,
+    city: spec.city,
+    postalCode: spec.postalCode,
+    vehicleClass: spec.vehicleClass,
+    restrictions: spec.restrictions,
+    endorsements: spec.endorsements,
+    documentDiscriminator: discriminator,
+  });
+  return renderPdf417(payload);
+}
+
+/** 26 — the barcode symbol itself rotated 90°, card otherwise standard-landscape.
+ *  Distinct from doc 04 (vertical-under-21), where the whole CARD is portrait — this
+ *  isolates "rotated symbol on an otherwise ordinary back" as its own case. Proves
+ *  decodePdf417's `tryRotate: true` (tier-a-pdf417.ts) empirically, not just by reading
+ *  the code — see docs/DECISIONS.md §8 A4. */
+async function dlBarcodeRotated(): Promise<void> {
+  const filename = '26_dl_barcode_rotated90_back.png';
+  const spec = barcodeRobustnessSpec();
+  const rotated = await sharp(await barcodeRobustnessBarcode(spec, 'OH552091774A090')).rotate(90).png().toBuffer();
+  const rotatedMeta = await sharp(rotated).metadata();
+  // A PDF417 symbol is characteristically wide and short (e.g. 870x63) — rotated 90° it
+  // becomes tall and narrow (63x870), taller than the card itself. Scale down to fit
+  // with margin, same long edge zxing's tryHarder is built to cope with; do not resize
+  // the UN-rotated barcode (renderPdf417's own comment: resizing after the fact is the
+  // fastest way to make a barcode undecodable — this is a controlled, uniform downscale
+  // of the whole rotated symbol, not a distortion of it).
+  const maxHeight = CARD_H - 60;
+  const scale = Math.min(1, maxHeight / (rotatedMeta.height ?? maxHeight));
+  const barcode = await sharp(rotated)
+    .resize({ height: Math.round((rotatedMeta.height ?? maxHeight) * scale) })
+    .png()
+    .toBuffer();
+  const meta = await sharp(barcode).metadata();
+  const bh = meta.height ?? 0;
+  const bw = meta.width ?? 0;
+  await writePng(
+    filename,
+    sharp(svgDoc(CARD_W, CARD_H, licenceBackBody(spec, CARD_W, CARD_H, bh))).composite([
+      { input: barcode, left: Math.max(0, Math.round((CARD_W - bw) / 2)), top: Math.max(0, Math.round((CARD_H - bh) / 2)) },
+    ]),
+  );
+  record({
+    filename,
+    expected_class: 'US_DRIVERS_LICENSE',
+    expected_basis: 'EXPIRY_DATE',
+    expected_date: spec.expiry,
+    expected_verdict: 'VALID',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8 A4): the client asked how the system finds a ' +
+      'barcode if a state rotates it. decodePdf417 already scans the full frame with ' +
+      'tryRotate/tryHarder and no fixed region — this document exists to prove that ' +
+      'empirically. Barcode symbol rotated 90°, composited centred rather than bottom-anchored. ' +
+      'A genuine, valid, in-domain licence: the point is decode robustness, not gate rejection.',
+  });
+}
+
+/** 27 — barcode off-centre (top-left-ish rather than bottom-centre). */
+async function dlBarcodeOffCentre(): Promise<void> {
+  const filename = '27_dl_barcode_offcenter_back.png';
+  const spec = barcodeRobustnessSpec();
+  const barcode = await barcodeRobustnessBarcode(spec, 'OH552091774A091');
+  const meta = await sharp(barcode).metadata();
+  const bh = meta.height ?? 0;
+  await writePng(
+    filename,
+    sharp(svgDoc(CARD_W, CARD_H, licenceBackBody(spec, CARD_W, CARD_H, bh))).composite([
+      { input: barcode, left: 40, top: Math.round((CARD_H - bh) / 2) },
+    ]),
+  );
+  record({
+    filename,
+    expected_class: 'US_DRIVERS_LICENSE',
+    expected_basis: 'EXPIRY_DATE',
+    expected_date: spec.expiry,
+    expected_verdict: 'VALID',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8 A4): barcode composited vertically centred and ' +
+      'left-aligned rather than the bottom-centre position every other licence in the corpus ' +
+      'uses, proving decode does not assume a fixed position. Genuine, valid, in-domain.',
+  });
+}
+
+/** 28 — barcode flush against a corner, close to the frame edge. */
+async function dlBarcodeAtEdge(): Promise<void> {
+  const filename = '28_dl_barcode_edge_back.png';
+  const spec = barcodeRobustnessSpec();
+  const barcode = await barcodeRobustnessBarcode(spec, 'OH552091774A092');
+  await writePng(
+    filename,
+    sharp(svgDoc(CARD_W, CARD_H, licenceBackBody(spec, CARD_W, CARD_H, 0))).composite([
+      { input: barcode, left: 6, top: 6 },
+    ]),
+  );
+  record({
+    filename,
+    expected_class: 'US_DRIVERS_LICENSE',
+    expected_basis: 'EXPIRY_DATE',
+    expected_date: spec.expiry,
+    expected_verdict: 'VALID',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8 A4): barcode flush against the top-left corner, ' +
+      'a few pixels from both edges, proving decode does not require margin around the symbol. ' +
+      'Genuine, valid, in-domain.',
+  });
+}
+
+/** 29 — a CRM/analytics dashboard screenshot. Deliberately built to clear BOTH gate
+ *  signal 1 (genuinely text-dense, structured rows — a data table reads similarly to an
+ *  ID card's field grid) and signal 2's actual guard: a dark, full-height left sidebar
+ *  (gate.ts's solo-band check) at a real display resolution. */
+async function adversarialCrmScreenshot(): Promise<void> {
+  const filename = '29_adversarial_crm_screenshot.png';
+  const w = 1920;
+  const h = 1080;
+  const sidebarW = 360; // 18.75% of width — clears CHROME_ZONE_A_FRACTION (0.18)
+  const rows = [
+    ['Acme Robotics', 'Prospect', '$84,200', 'Aug 12'],
+    ['Blue Harbor Ltd', 'Negotiation', '$212,000', 'Aug 14'],
+    ['Cedarline Group', 'Won', '$41,500', 'Aug 9'],
+    ['Delta Fabrication', 'Prospect', '$96,750', 'Aug 20'],
+    ['Everline Supply', 'Lost', '$18,300', 'Aug 3'],
+    ['Fenwick & Co', 'Negotiation', '$63,900', 'Aug 22'],
+  ];
+  const tableRows = rows
+    .map((r, i) => {
+      const y = 260 + i * 56;
+      return (
+        text(sidebarW + 60, y, r[0], { size: 20, weight: 'bold' }) +
+        text(sidebarW + 460, y, r[1], { size: 18, fill: '#4b5563' }) +
+        text(sidebarW + 760, y, r[2], { size: 18, fill: '#111827' }) +
+        text(sidebarW + 1000, y, r[3], { size: 18, fill: '#6b7280' })
+      );
+    })
+    .join('');
+  const body = [
+    rect(0, 0, w, h, '#f8fafc'),
+    // Sidebar — solo, full-height, uniform, high-contrast: gate.ts's isSoloBand check.
+    rect(0, 0, sidebarW, h, '#111827'),
+    text(48, 64, 'PIPEDECK CRM', { size: 26, weight: 'bold', fill: '#e5e7eb' }),
+    ...['Dashboard', 'Deals', 'Contacts', 'Reports', 'Settings'].map((label, i) =>
+      text(48, 180 + i * 56, label, { size: 20, fill: i === 1 ? '#93c5fd' : '#9ca3af', weight: i === 1 ? 'bold' : 'normal' }),
+    ),
+    // Top toolbar — a second, differently-shaded band.
+    rect(sidebarW, 0, w - sidebarW, 96, '#ffffff'),
+    text(sidebarW + 60, 58, 'Deals Pipeline', { size: 30, weight: 'bold', fill: '#111827' }),
+    text(w - 60, 58, 'Q3 2026', { size: 18, fill: '#6b7280', anchor: 'end' }),
+    text(sidebarW + 60, 208, 'ACCOUNT', { size: 14, weight: 'bold', fill: '#6b7280', letterSpacing: 1 }),
+    text(sidebarW + 460, 208, 'STAGE', { size: 14, weight: 'bold', fill: '#6b7280', letterSpacing: 1 }),
+    text(sidebarW + 760, 208, 'VALUE', { size: 14, weight: 'bold', fill: '#6b7280', letterSpacing: 1 }),
+    text(sidebarW + 1000, 208, 'CLOSE', { size: 14, weight: 'bold', fill: '#6b7280', letterSpacing: 1 }),
+    tableRows,
+  ].join('');
+  await writePng(filename, sharp(svgDoc(w, h, body)));
+  record({
+    filename,
+    expected_class: 'NOT_A_DOCUMENT',
+    expected_basis: 'UNDETERMINED',
+    expected_date: null,
+    expected_verdict: 'NOT_APPLICABLE',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8): a CRM screenshot at a real display resolution ' +
+      '(1920x1080), genuinely text-dense in structured rows (clears gate signal 1 on its own, ' +
+      'same as the client\'s framing: "text-dense but screen-native — that combination is the ' +
+      'tell"). The dark full-height sidebar is what signal 2 actually catches. Must terminate at ' +
+      'the gate as REJECTED, never reach a paid tier.',
+  });
+}
+
+/** 30 — a smooth, low-variance wallpaper. No text, no document-shaped structure — should
+ *  trip gate signal 1 on its own (flat/featureless), never reaching signal 2 at all. */
+async function adversarialWallpaper(): Promise<void> {
+  const filename = '30_adversarial_wallpaper.png';
+  const w = 1600;
+  const h = 1200;
+  const body = [
+    `<defs><linearGradient id="wp" x1="0" y1="0" x2="1" y2="1">` +
+      `<stop offset="0%" stop-color="#c7d2fe"/><stop offset="100%" stop-color="#a5b4fc"/>` +
+      `</linearGradient></defs>`,
+    rect(0, 0, w, h, 'url(#wp)'),
+  ].join('');
+  await writePng(filename, sharp(svgDoc(w, h, body)));
+  record({
+    filename,
+    expected_class: 'NOT_A_DOCUMENT',
+    expected_basis: 'UNDETERMINED',
+    expected_date: null,
+    expected_verdict: 'NOT_APPLICABLE',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8): a smooth gradient wallpaper, deliberately not a ' +
+      'busy photographic texture, so it reliably trips gate signal 1\'s flat/featureless branch ' +
+      'rather than relying on ink-fraction extremity alone. No structured text rows, no ' +
+      'document-shaped quad. Must terminate at the gate as REJECTED.',
+  });
+}
+
+/** 31 — a "selfie": no synthetic face (this repo's existing convention, see
+ *  licenceFrontBody's photo-placeholder comment) — a skin-tone-ish blob against a soft
+ *  background, no document quad, no text rows. Flagged expectation, not a hard pass
+ *  criterion: pure pixel statistics cannot reliably distinguish "a face photo" from "a
+ *  very poor document photo," so this plausibly resolves ADMIT_LIMITED rather than
+ *  REJECT — the asymmetry rule (docs/DECISIONS.md §8 A2) working as designed, not a bug.
+ *  It still belongs in the adversarial set for the out-of-domain rate. */
+async function adversarialSelfie(): Promise<void> {
+  const filename = '31_adversarial_selfie.png';
+  const w = 1200;
+  const h = 1600;
+  const body = [
+    `<defs><radialGradient id="bg" cx="50%" cy="35%" r="75%">` +
+      `<stop offset="0%" stop-color="#e2e8f0"/><stop offset="100%" stop-color="#94a3b8"/>` +
+      `</radialGradient></defs>`,
+    rect(0, 0, w, h, 'url(#bg)'),
+    // A soft, faceless skin-tone oval — no eyes, no mouth, no document-shaped rectangle.
+    `<ellipse cx="${w / 2}" cy="${h * 0.42}" rx="260" ry="330" fill="#e8b596" opacity="0.92"/>`,
+    `<ellipse cx="${w / 2}" cy="${h * 0.42}" rx="260" ry="330" fill="none" stroke="#d9a17f" stroke-width="4" opacity="0.4"/>`,
+  ].join('');
+  await writePng(filename, sharp(svgDoc(w, h, body)));
+  record({
+    filename,
+    expected_class: 'NOT_A_DOCUMENT',
+    expected_basis: 'UNDETERMINED',
+    expected_date: null,
+    expected_verdict: 'NOT_APPLICABLE',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8): a faceless portrait-shaped photo standing in ' +
+      'for a selfie (no synthetic faces in this repo). LABELLING NOTE: this one plausibly scores ' +
+      'ADMIT_LIMITED rather than REJECTED — it has real tonal structure so it will not trip ' +
+      'signal 1\'s flatness branch, and it is not a screenshot so signal 2 will not fire either. ' +
+      'That is the asymmetry rule (§8 A2) working as intended, not a failure: the gate must never ' +
+      'be tuned into a confident reject on a case this ambiguous from pixel statistics alone.',
+  });
+}
+
+/** 32 — a restaurant receipt. Narrow/tall, genuinely row-structured and bill-like, but
+ *  must trip none of the gate's domain keywords — proving the 'bill date'/'total due'/
+ *  'amount due' exclusions (docs/DECISIONS.md §8 A5) actually hold against the exact
+ *  shape of document they exist to guard against. */
+async function adversarialReceipt(): Promise<void> {
+  const filename = '32_adversarial_receipt.png';
+  // A receipt's real long edge (page height here) matters for T0's effective-DPI
+  // estimate, which assumes an 11" physical long edge for anything this elongated
+  // (aspect > 1.75) — at the original 420x1500 logical size that put effective DPI just
+  // under MIN_EFFECTIVE_DPI (150) and the whole document failed to normalize before ever
+  // reaching the gate. SCALE renders everything at 1.7x so the pixel dimensions clear
+  // that floor, without hand-adjusting every coordinate below.
+  const SCALE = 1.7;
+  const w = 420;
+  const h = 1500;
+  const items: Array<[string, string]> = [
+    ['Roast chicken plate', '18.50'],
+    ['Charred broccolini', '9.00'],
+    ['Sourdough + butter', '6.50'],
+    ['House lemonade x2', '8.00'],
+    ['Olive oil cake', '7.50'],
+  ];
+  let y = 210;
+  const lines: string[] = [];
+  for (const [name, price] of items) {
+    lines.push(text(30, y, name, { size: 17 }), text(w - 30, y, price, { size: 17, anchor: 'end' }));
+    y += 40;
+  }
+  y += 20;
+  const subtotal = items.reduce((s, [, p]) => s + Number(p), 0);
+  const tax = subtotal * 0.0875;
+  const grand = subtotal + tax;
+  const body = [
+    rect(0, 0, w, h, '#fefefe'),
+    text(w / 2, 70, 'MERIDIAN BISTRO', { size: 26, weight: 'bold', anchor: 'middle' }),
+    text(w / 2, 100, '118 Harbor Row', { size: 14, anchor: 'middle', fill: '#4b5563' }),
+    text(w / 2, 122, 'Table 14  ·  Server: J.', { size: 14, anchor: 'middle', fill: '#4b5563' }),
+    rect(24, 150, w - 48, 1, '#d1d5db'),
+    lines.join(''),
+    rect(24, y, w - 48, 1, '#d1d5db'),
+    text(30, y + 40, 'Subtotal', { size: 16 }),
+    text(w - 30, y + 40, subtotal.toFixed(2), { size: 16, anchor: 'end' }),
+    text(30, y + 68, 'Tax', { size: 16 }),
+    text(w - 30, y + 68, tax.toFixed(2), { size: 16, anchor: 'end' }),
+    text(30, y + 106, 'Total', { size: 20, weight: 'bold' }),
+    text(w - 30, y + 106, grand.toFixed(2), { size: 20, weight: 'bold', anchor: 'end' }),
+    text(w / 2, y + 170, `${anchorPlusDays(-2)}  7:42 PM`, { size: 13, anchor: 'middle', fill: '#6b7280', font: FONT_MONO }),
+    text(w / 2, y + 210, 'Thank you for dining with us!', { size: 14, anchor: 'middle', fill: '#4b5563' }),
+    text(w / 2, y + 240, 'Check #4471  ·  Visa ..4821', { size: 12, anchor: 'middle', fill: '#9ca3af' }),
+  ].join('');
+  await writePng(filename, sharp(svgDoc(w * SCALE, h * SCALE, `<g transform="scale(${SCALE})">${body}</g>`)));
+  record({
+    filename,
+    expected_class: 'NOT_A_DOCUMENT',
+    expected_basis: 'UNDETERMINED',
+    expected_date: null,
+    expected_verdict: 'NOT_APPLICABLE',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8 A5): a restaurant receipt, narrow and genuinely ' +
+      'row-structured (clears gate signal 1 the same way the CRM screenshot does), no app chrome ' +
+      '(signal 2 does not fire — it is not a screenshot at all). The real test is signal 3: ' +
+      '"Subtotal"/"Tax"/"Total" and a transaction date are exactly the phrasing GATE_KEYWORD_ ' +
+      'EXCLUSIONS (\'total due\', \'amount due\', \'bill date\') exists to keep from tripping a ' +
+      'false ADMIT_FULL. Must terminate at the gate as REJECTED.',
+  });
+}
+
+/** 33 — a screenshot of a webpage listing dates. Real browser chrome (a dark tab strip
+ *  directly above a lighter address/bookmarks bar — a genuine stacked pair, unlike a
+ *  driving licence's single accent header) at a real display resolution, so gate signal
+ *  2 fires and the page's own date strings never reach signal 3 at all. */
+async function adversarialWebpageScreenshot(): Promise<void> {
+  const filename = '33_adversarial_webpage_screenshot.png';
+  const w = 1920;
+  const h = 1080;
+  // Matches gate.ts's own CHROME_ZONE_A_FRACTION/CHROME_ZONE_B_FRACTION exactly, so each
+  // bar fills its comparison zone cleanly instead of both landing inside zone A alone.
+  const zoneAEnd = Math.round(h * 0.18); // tab strip
+  const zoneBEnd = Math.round(h * 0.36); // address + bookmarks bar
+  const entries = [
+    ['Q3 planning kickoff', 'Aug 11, 2026'],
+    ['Infra maintenance window', 'Aug 13, 2026'],
+    ['All-hands recording posted', 'Aug 14, 2026'],
+    ['Design review — checkout flow', 'Aug 18, 2026'],
+    ['Quarter close deadline', 'Aug 28, 2026'],
+  ];
+  const list = entries
+    .map((e, i) => {
+      const y = zoneBEnd + 120 + i * 64;
+      return text(120, y, e[0], { size: 22 }) + text(w - 120, y, e[1], { size: 20, fill: '#6b7280', anchor: 'end' });
+    })
+    .join('');
+  const body = [
+    rect(0, 0, w, h, '#ffffff'),
+    // Tab strip — dark.
+    rect(0, 0, w, zoneAEnd, '#202124'),
+    text(40, zoneAEnd - 22, 'Team Calendar — Upcoming', { size: 16, fill: '#e8eaed' }),
+    // Address / bookmarks bar — light, clearly different shade: the genuine stacked pair.
+    rect(0, zoneAEnd, w, zoneBEnd - zoneAEnd, '#f1f3f4'),
+    text(120, zoneAEnd + (zoneBEnd - zoneAEnd) / 2 + 6, 'https://calendar.example.internal/team/upcoming', {
+      size: 15,
+      fill: '#5f6368',
+      font: FONT_MONO,
+    }),
+    text(w / 2, zoneBEnd + 70, 'Upcoming dates', { size: 30, weight: 'bold', anchor: 'middle' }),
+    list,
+  ].join('');
+  await writePng(filename, sharp(svgDoc(w, h, body)));
+  record({
+    filename,
+    expected_class: 'NOT_A_DOCUMENT',
+    expected_basis: 'UNDETERMINED',
+    expected_date: null,
+    expected_verdict: 'NOT_APPLICABLE',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8): a webpage screenshot listing several real ' +
+      'dates — the point is proving signal ORDERING. Real stacked browser chrome (a dark tab ' +
+      'strip immediately above a lighter address bar, two clearly different shades) means gate ' +
+      'signal 2 fires and the page\'s own date strings must never be reached by signal 3 at all, ' +
+      'let alone parsed into a false positive. Must terminate at the gate as REJECTED.',
+  });
+}
+
+/** 34 — a blurry photo of a blank wall. Reuses the same flat/degraded technique as
+ *  degradedBlur (a subtle-texture fill plus a heavy Gaussian blur), applied to content
+ *  with no document structure at all rather than to a real licence. */
+async function adversarialBlurryWall(): Promise<void> {
+  const filename = '34_adversarial_blurry_wall.png';
+  const w = 1400;
+  const h = 1050;
+  const body = [
+    rect(0, 0, w, h, '#d6d3c9'),
+    // A faint, irregular texture — plaster/stucco, not document content.
+    ...Array.from({ length: 40 }, (_, i) => {
+      const cx = (i * 137) % w;
+      const cy = (i * 251) % h;
+      return `<circle cx="${cx}" cy="${cy}" r="${20 + (i % 5) * 6}" fill="#c9c5b8" opacity="0.35"/>`;
+    }),
+  ].join('');
+  await writePng(filename, sharp(svgDoc(w, h, body)).blur(14));
+  record({
+    filename,
+    expected_class: 'NOT_A_DOCUMENT',
+    expected_basis: 'UNDETERMINED',
+    expected_date: null,
+    expected_verdict: 'NOT_APPLICABLE',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8): a heavily blurred photo of a textured wall — ' +
+      'reuses degradedBlur\'s blur technique, applied to content with no document structure at ' +
+      'all rather than to a real licence. No document-shaped quad, no structured text rows. Must ' +
+      'terminate at the gate as REJECTED.',
+  });
+}
+
+/** 35 — a genuine document photographed so badly it is illegible. NOT out-of-domain —
+ *  a real, valid licence captured through low effective DPI, extreme skew, and heavy
+ *  blur simultaneously, worse than docs 22/23 individually. Ground truth intentionally
+ *  differs from the other adversarial docs (docs/DECISIONS.md §8): it must never score
+ *  as REJECTED — that is exactly the false-reject-on-a-valid-document failure mode the
+ *  gate's exit criteria require to be zero. */
+async function illegibleDocument(): Promise<void> {
+  const filename = '35_illegible_dl_wy.png';
+  const spec = degradedLicenceSpec({
+    state: 'WY',
+    stateName: 'Wyoming',
+    accent: '#4c1d95',
+    licenceNumber: 'W881204471',
+    familyName: 'OSTROWSKI',
+    firstName: 'MAGDALENA',
+    middleName: 'J',
+    dob: '1988-11-04',
+    issue: '2023-11-04',
+    expiry: '2031-11-04',
+    sex: 'F',
+    city: 'CHEYENNE',
+    postalCode: '82001',
+  });
+  const full = await sharp(svgDoc(CARD_W, CARD_H, licenceFrontBody(spec, CARD_W, CARD_H))).png().toBuffer();
+  // Shrunk to ~40% of the original long edge — well under MIN_EFFECTIVE_DPI (150) for an
+  // ID-1-shaped image (estimateEffectiveDpi assumes a 3.37" physical long edge).
+  const shrunk = await sharp(full).resize({ width: Math.round(CARD_W * 0.4) }).toBuffer();
+  await writePng(
+    filename,
+    sharp(shrunk).rotate(-22, { background: '#f4f6f8' }).blur(11),
+  );
+  record({
+    filename,
+    expected_class: 'US_DRIVERS_LICENSE',
+    expected_basis: 'EXPIRY_DATE',
+    expected_date: spec.expiry,
+    expected_verdict: 'INDETERMINATE',
+    notes:
+      'Admission gate v2 (docs/DECISIONS.md §8): a genuine, valid licence, deliberately worse ' +
+      'than docs 22/23 individually — low effective DPI (~40% scale, well under ' +
+      'MIN_EFFECTIVE_DPI), extreme skew (-22°, past EXTREME_SKEW_DEG=15°) and heavy blur (sigma ' +
+      '11) simultaneously. LABELLING NOTE, same convention as docs 22/23: expected_date carries ' +
+      'the true printed expiry so the confident-and-wrong table can be computed, but the correct ' +
+      'behaviour is abstention (INDETERMINATE), and this document must never be rejected at the ' +
+      'gate — a real document, however badly captured, is not out of domain.',
+  });
+}
+
+// ---------------------------------------------------------------------------
 // CSV
 // ---------------------------------------------------------------------------
 
@@ -2204,6 +2688,16 @@ const BUILDERS: Array<() => Promise<void>> = [
   degradedGlare,
   promptInjection,
   notADocument,
+  dlBarcodeRotated,
+  dlBarcodeOffCentre,
+  dlBarcodeAtEdge,
+  adversarialCrmScreenshot,
+  adversarialWallpaper,
+  adversarialSelfie,
+  adversarialReceipt,
+  adversarialWebpageScreenshot,
+  adversarialBlurryWall,
+  illegibleDocument,
 ];
 
 /**

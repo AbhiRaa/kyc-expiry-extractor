@@ -40,7 +40,7 @@ import {
 } from './generate-corpus';
 import { DOCUMENT_CLASSES, VALIDITY_BASES } from '@/types/contract';
 
-/** Generation renders 25 documents including a 40-page PDF; well over vitest's default. */
+/** Generation renders 35 documents including a 40-page PDF; well over vitest's default. */
 const GENERATE_TIMEOUT_MS = 180_000;
 
 const VERDICTS = ['VALID', 'EXPIRED', 'NOT_APPLICABLE', 'INDETERMINATE'];
@@ -102,13 +102,16 @@ beforeAll(async () => {
 }, GENERATE_TIMEOUT_MS);
 
 describe('corpus generation', () => {
-  it('generates every document named in the §12 target composition', () => {
+  it('generates every document named in the §12 target composition, plus the admission gate set', () => {
     // §12's itemized composition (6 DL + 4 passports + 3 insurance + 3 bank + 2 utility +
     // 3 employment + 2 degraded + 1 injection + 1 not-a-document) sums to 25, inside the
-    // brief's stated 20-25 range. Covering every named case is what matters, so the count
-    // follows the itemization.
-    expect(corpusFiles).toHaveLength(25);
-    expect(produced).toHaveLength(25);
+    // brief's stated 20-25 range. 10 more were added for the v2 admission-gate rework
+    // (docs/DECISIONS.md §8): 3 barcode-robustness proofs (rotated/off-centre/edge-flush,
+    // all valid in-domain licences) and 7 adversarial cases (docs 29-35) — the client's
+    // own framing: "we are not trying to prove this right, we are trying to prove it
+    // wrong." 25 + 10 = 35.
+    expect(corpusFiles).toHaveLength(35);
+    expect(produced).toHaveLength(35);
   });
 
   it('matches ground_truth.csv row count to the generated file count', async () => {

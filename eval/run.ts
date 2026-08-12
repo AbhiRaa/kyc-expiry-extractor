@@ -30,6 +30,7 @@ import { normalizeDocument } from '@/pipeline/normalize';
 import { runPipeline } from '@/pipeline/router';
 import { AnthropicVlmClient } from '@/pipeline/vlm-client';
 import { terminateOcrWorker } from '@/pipeline/tier-b-ocr';
+import { reviewerMinutesAvoided } from '@/lib/reviewer-economics';
 import { ANCHOR_TODAY, CORPUS_DIR, GROUND_TRUTH_PATH } from './generate-corpus';
 
 const RESULTS_PATH = path.join(path.dirname(GROUND_TRUTH_PATH), 'results.md');
@@ -214,6 +215,16 @@ async function main(): Promise<void> {
       answered.length ? pct(correctAnswered / answered.length) : 'n/a'
     } · overall ${pct(outcomes.filter((o) => o.correct).length / outcomes.length)}`,
   );
+
+  const nonAdversarial = outcomes.filter((o) => !isAdversarial(o.expected));
+  const falseRejects = nonAdversarial.filter((o) => o.actual?.decision === 'REJECTED');
+  const adversarial = outcomes.filter((o) => isAdversarial(o.expected));
+  const adversarialRejected = adversarial.filter((o) => o.actual?.decision === 'REJECTED');
+  console.log(
+    `Gate: out-of-domain rejected ${adversarialRejected.length}/${adversarial.length} · ` +
+      `false rejects on valid docs ${falseRejects.length}/${nonAdversarial.length}` +
+      (falseRejects.length > 0 ? '  <<< SAFETY FAILURE, must be zero' : ''),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +233,18 @@ async function main(): Promise<void> {
 
 function pct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
+}
+
+/**
+ * Admission gate (v2 client rework, docs/DECISIONS.md §8). A ground-truth row is
+ * "adversarial" — out of domain on purpose — when it expects `NOT_A_DOCUMENT` or
+ * `OTHER_DOCUMENT`. Deliberately excludes doc 35 (a real, valid licence photographed so
+ * badly it is illegible): a badly-captured real document is not out of domain, and it
+ * must never count toward the rejection rate the same way a wallpaper or a CRM
+ * screenshot does — see the doc's own ground-truth notes.
+ */
+function isAdversarial(expected: Expected): boolean {
+  return expected.expected_class === 'NOT_A_DOCUMENT' || expected.expected_class === 'OTHER_DOCUMENT';
 }
 
 function renderReport(outcomes: Outcome[], hasKey: boolean): string {
@@ -336,6 +359,68 @@ function renderReport(outcomes: Outcome[], hasKey: boolean): string {
   lines.push('|---|---|---|');
   for (const [decision, count] of byDecision.entries()) {
     lines.push(`| ${decision} | ${count} | ${pct(count / total)} |`);
+  }
+  lines.push('');
+
+  const adversarial = outcomes.filter((o) => isAdversarial(o.expected));
+  const nonAdversarial = outcomes.filter((o) => !isAdversarial(o.expected));
+  const adversarialRejected = adversarial.filter((o) => o.actual?.decision === 'REJECTED');
+  const falseRejects = nonAdversarial.filter((o) => o.actual?.decision === 'REJECTED');
+  const spendAvoided = outcomes.reduce((sum, o) => sum + (o.actual?.admission?.spend_avoided_usd ?? 0), 0);
+  // Containment is a different claim from rejection: it asks "did this document ever
+  // reach the paid VLM tier," not "did the gate reject it outright." ADMIT_LIMITED
+  // documents still enter REVIEW but are contained just as completely as a REJECT —
+  // cost_usd is the one field that's honest about that regardless of which path got
+  // there (gate REJECT, gate ADMIT_LIMITED, or even the pre-gate T0 path).
+  const adversarialContained = adversarial.filter((o) => (o.actual?.cost_usd ?? 0) === 0);
+  const touchesAvoided = adversarialRejected.length;
+  const minutesAvoided = reviewerMinutesAvoided(touchesAvoided);
+
+  lines.push('## Admission gate (v2 client rework)');
+  lines.push('');
+  lines.push(
+    'The client\'s cost argument, quantified. See docs/DECISIONS.md §8 for the full design',
+    'record — the asymmetry rule, the three signals, and why REJECT can only be reached',
+    'through confident negative evidence, never through absence of positive evidence.',
+    '',
+  );
+  lines.push(
+    `- Out-of-domain rejection rate: **${adversarial.length ? pct(adversarialRejected.length / adversarial.length) : 'n/a'}** ` +
+      `(${adversarialRejected.length}/${adversarial.length} adversarial documents terminated at the gate)`,
+  );
+  lines.push(
+    `- Containment rate (never reached the paid VLM tier): **${adversarial.length ? pct(adversarialContained.length / adversarial.length) : 'n/a'}** ` +
+      `(${adversarialContained.length}/${adversarial.length}) — REJECT and ADMIT_LIMITED both count, ` +
+      'since ADMIT_LIMITED hard-blocks VLM escalation just as effectively even though the document still reaches REVIEW',
+  );
+  lines.push(
+    `- **False rejection rate on valid documents: ${nonAdversarial.length ? pct(falseRejects.length / nonAdversarial.length) : 'n/a'} ` +
+      `(${falseRejects.length}/${nonAdversarial.length})** ← must be zero, the gate's exit criterion alongside "confident and wrong"`,
+  );
+  lines.push(`- Spend avoided by the gate: **$${spendAvoided.toFixed(4)}**`);
+  lines.push(
+    `- Human touches avoided: **${touchesAvoided}** document(s) that would otherwise have sat in the REVIEW ` +
+      `queue now terminate at the gate instead — ≈**${Math.round(minutesAvoided.low)}–${Math.round(minutesAvoided.high)} reviewer-minutes** ` +
+      'avoided, at the client\'s own stated throughput of 20–30 documents/reviewer/day (an editable assumption, not a measured fact — see src/lib/reviewer-economics.ts)',
+  );
+  lines.push('');
+  if (falseRejects.length > 0) {
+    lines.push('**False rejections — the gate\'s own safety failure, not a scoring detail:**');
+    lines.push('');
+    lines.push('| Document | Expected class | Gate signal that fired |');
+    lines.push('|---|---|---|');
+    for (const o of falseRejects) {
+      const fired = o.actual?.admission?.signals.find((s) => s.outcome === 'CONFIDENT_NEGATIVE');
+      lines.push(`| \`${o.expected.filename}\` | ${o.expected.expected_class} | ${fired ? fired.signal : '—'} |`);
+    }
+    lines.push('');
+  }
+  lines.push('| Adversarial document | Admission | Signal(s) |');
+  lines.push('|---|---|---|');
+  for (const o of adversarial) {
+    const admission = o.actual?.admission;
+    const signals = admission?.signals.map((s) => `${s.signal}:${s.outcome}`).join(', ') ?? '—';
+    lines.push(`| \`${o.expected.filename}\` | ${admission?.decision ?? '—'} | ${signals} |`);
   }
   lines.push('');
 

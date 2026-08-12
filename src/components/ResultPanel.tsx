@@ -38,6 +38,10 @@ const REASON_TEXT: Record<ReasonCode, string> = {
   UNSUPPORTED_TYPE: 'That file type is not supported — upload an image or a PDF',
   CORRUPT_FILE: 'The file could not be read — it may be corrupt or only partially uploaded',
   ENCRYPTED_PDF: 'The PDF is password-protected',
+  OUT_OF_DOMAIN: 'The admission gate found confident evidence this is not a KYC document',
+  NOT_A_DOCUMENT_IMAGE: 'No document-shaped structure was found in the frame',
+  SCREEN_CAPTURE_NOT_DOCUMENT: 'This looks like a screenshot of an application, not a document',
+  NO_DOMAIN_SIGNAL: 'No positive evidence of a KYC document was found — admitted for the free tiers only',
   NO_DATES_FOUND: 'No dates were found on the document',
   NO_EXPIRY_SEMANTICS: 'Dates were found, but none of them means an expiry',
   AMBIGUOUS_DATE_FORMAT: 'The date could be read more than one way',
@@ -72,6 +76,7 @@ const DECISION_TEXT: Record<Decision, string> = {
   AUTO_PASS: 'Clears automatically',
   AUTO_FAIL: 'Fails automatically',
   REVIEW: 'Routed to a human',
+  REJECTED: 'Rejected at the admission gate — never entered the review queue',
 };
 
 /**
@@ -100,6 +105,12 @@ function headline(decision: Decision, verdict: Verdict): {
       return { tone: 'ok', glyph: '✔', text: verdict === 'VALID' ? 'Valid' : 'Pass' };
     case 'AUTO_FAIL':
       return { tone: 'bad', glyph: '✕', text: verdict === 'EXPIRED' ? 'Expired' : 'Fail' };
+    case 'REJECTED':
+      // Deliberately not 'warn'/'bad' — REJECTED isn't a failed verdict on a real
+      // document, it's the gate declining to treat the input as one at all. Rendering
+      // it as "Needs review" (the old default) would misleadingly imply a human should
+      // act; nobody does, by design.
+      return { tone: 'neutral', glyph: '⊘', text: 'Rejected — out of domain' };
     case 'REVIEW':
     default:
       return { tone: 'warn', glyph: '!', text: 'Needs review' };

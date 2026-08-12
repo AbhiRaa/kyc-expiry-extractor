@@ -181,7 +181,12 @@ function aspectRatio(width: number, height: number): number {
  * appear) over topical vocabulary. "Closing balance" is on every bank statement and
  * almost nothing else; "bank" is on half the documents in the eval set.
  */
-const CLASS_KEYWORDS: Array<{ cls: DocumentClass; weight: number; terms: string[] }> = [
+/**
+ * Exported for the admission gate (gate.ts), which derives a stricter, filtered subset
+ * for its own bare "≥1 hit → admit" trigger — see GATE_KEYWORD_EXCLUSIONS there. This
+ * array's own margin/threshold logic in classifyDocument() below is unaffected.
+ */
+export const CLASS_KEYWORDS: Array<{ cls: DocumentClass; weight: number; terms: string[] }> = [
   {
     cls: 'BANK_STATEMENT',
     weight: 1,
