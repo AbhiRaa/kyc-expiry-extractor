@@ -109,6 +109,13 @@ export const REASON_CODES = [
   'POOR_CONTRAST',
   'OBSTRUCTED_BY_HAND',
   'PHOTOCOPY_DEGRADED',
+  /** OCR confidence collapsed despite none of the other input-quality codes above firing —
+   *  none of the usual explanations (blur, low DPI, glare, skew, contrast, cropping,
+   *  obstruction) apply, which is itself informative. Most commonly a photographed book
+   *  spread (e.g. an open passport) where one visible page is upside-down relative to the
+   *  other within a single frame — real content, wrong shape for this pipeline's
+   *  single-page, single-orientation assumption. See docs/DECISIONS.md §11. */
+  'MIXED_ORIENTATION_SUSPECTED',
 
   // Document
   'CLASS_UNRECOGNIZED',

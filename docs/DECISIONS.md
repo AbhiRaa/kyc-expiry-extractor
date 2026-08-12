@@ -743,3 +743,73 @@ issue date correctly excluded — instead of `INDETERMINATE` with nothing to sho
 decision (only real-API latency/cost noise moved), confirming neither fix disturbs any
 existing behavior — D3's guard conditions mean it is a no-op everywhere this exact
 timing gap doesn't apply.
+
+## 11. A real passport scan surfaces the pipeline's single-page assumption
+
+Found on a real passport PDF uploaded during manual testing: a photographed *spread* of
+two facing physical pages stacked into one image — a visa-stamps page upside-down on top,
+the bio-data page (photo, MRZ, expiry) right-side up on the bottom, both within a single
+frame. `router.ts` only ever processes `doc.pages[0]`; that page's content was real, the
+image quality was genuinely fine (`laplacian_variance` 1143, `effective_dpi` 300, no
+skew), and the pipeline still came back `NO_DATES_FOUND` with nothing explaining why.
+
+### E1 — the actual mechanism: OCR confidence collapse, not a rotation bug
+
+Verified directly, not assumed: running the exact normalized raster through Tesseract
+gave a mean confidence of **28.6/100** (clean printed text on a real document routinely
+scores 85+) and visibly garbled output (`"TIES yy brim ody sie y pre as ghee"`). The real
+values were technically present in the noise — one fragment carried both `07/07/2022` and
+`06/07/2032` — but never as a clean, matchable line. `T0` applies **no** rotation or
+perspective correction here (`rotationAppliedDeg: 0`, `perspectiveCorrected: false` —
+the detected quad covered only 34.8% of the frame, below whatever threshold triggers a
+correction), so this is not a mis-applied rotation flipping a correct read upside down.
+It's simpler and more mundane than that: Tesseract's page segmentation degrades badly
+when a large fraction of a single frame is text in a different orientation than the rest,
+even without anything actually being rotated by the pipeline itself.
+
+This cascades exactly as every other tier is designed to behave, which is the frustrating
+part — nothing malfunctioned: TA (MRZ/barcode) correctly finds nothing in OCR output that
+degraded, TB correctly can't match a label, and the admission gate's own cheap OCR
+presurvey hits the *same* degraded recognition and lands on `ADMIT_LIMITED` — which
+hard-blocks the paid VLM tier by design (§8's asymmetry rule). A VLM would very likely
+read this composite far better than Tesseract's layout analysis does, but it never gets
+the chance, because the gate's "is this worth paying for" check and "can we read this at
+all" check share the same weak, cheap signal.
+
+### E2 — what was rejected, and why
+
+Two more invasive options were considered and explicitly rejected:
+
+- **Detect and split the two-orientation composite before OCR.** The real fix, but a
+  genuinely new capability this codebase doesn't have (no sub-region orientation
+  detection exists anywhere today) — a real engineering investment for an input shape
+  this system's own stated scope (§ Corpus honesty) doesn't claim to handle, not a quick
+  patch.
+- **Let the gate's positive-domain-signal check fall back to document-likeness alone,**
+  bypassing the requirement that OCR/MRZ/barcode actually prove a domain match. Rejected
+  outright: this is the exact cost guarantee the admission gate exists to provide (§8 A2)
+  — loosening it to fix one edge case would let any merely document-shaped image
+  (a book page, a flyer) reach the paid tier without ever proving it's KYC-relevant.
+
+### E3 — what shipped: name the anomaly, change nothing else
+
+A new reason code, `MIXED_ORIENTATION_SUSPECTED`, fires when OCR confidence collapses
+(`< OCR_CONFIDENCE_ANOMALY_FLOOR`, 40 — a judgment call, not a measured boundary; no
+existing corpus fixture exercises this path) **and** none of T0's own existing
+input-quality codes (`IMAGE_TOO_BLURRY`, `RESOLUTION_TOO_LOW`, `GLARE_OBSCURES_FIELD`,
+`EXTREME_SKEW`, `POOR_CONTRAST`, `DOCUMENT_CROPPED`, `OBSTRUCTED_BY_HAND`,
+`PHOTOCOPY_DEGRADED`) already explain it — reusing that existing fixed set rather than
+inventing new thresholds, so this can't silently duplicate or contradict logic that
+already exists elsewhere. It changes no decision: `REVIEW` was already correct here
+(nothing was confidently found), this only makes the abstention legible instead of
+opaque, replacing an unexplained `NO_DATES_FOUND` with something the person holding the
+document can actually act on — retake it one page at a time. `isUnexplainedOcrConfidenceCollapse`
+(`router.ts`) is deliberately a small, pure, exported function specifically so this
+judgment call is unit-testable without a real OCR pass (`router.test.ts` — router.ts's
+first unit test file; everything else about it is verified through the eval harness
+against real generated documents, per §9's verification note).
+
+Verified against the real document: the fix fires `MIXED_ORIENTATION_SUSPECTED` exactly
+as intended. Verified against the full 35-document synthetic corpus: zero false
+positives — the anomaly never fires on any existing document, and every decision,
+coverage, and accuracy number is unchanged.

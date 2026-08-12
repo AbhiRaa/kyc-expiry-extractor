@@ -29,6 +29,10 @@ const REASON_TEXT: Record<ReasonCode, string> = {
   POOR_CONTRAST: 'Contrast is too low to separate text from background',
   OBSTRUCTED_BY_HAND: 'A hand or object covers part of the document',
   PHOTOCOPY_DEGRADED: 'Photocopy degradation has destroyed detail',
+  MIXED_ORIENTATION_SUSPECTED:
+    'Text recognition failed unexpectedly on an image that otherwise looks sharp and ' +
+    'well-scanned — this can happen when a photo captures two pages at once with mismatched ' +
+    'orientation (e.g. an open passport). Try photographing or scanning one page at a time.',
   CLASS_UNRECOGNIZED: 'The document type could not be identified',
   UNSUPPORTED_SCRIPT: 'The script or language is not supported',
   WRONG_SIDE_CAPTURED: 'The side captured does not carry the field',

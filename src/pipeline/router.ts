@@ -91,6 +91,45 @@ function logTierFailure(tier: string, error: unknown): null {
  */
 const TC_CLASSIFICATION_CONFIDENCE = 0.7;
 
+/**
+ * Below this, OCR has essentially failed — clean printed text on a real document routinely
+ * scores 85+ on Tesseract's 0-100 scale; a genuinely hard-but-legible case (small print, a
+ * decorative font) still usually clears 50-60. This floor is a judgment call, not a
+ * measured boundary (§11 — no existing corpus fixture exercises this path), picked low
+ * enough to avoid flagging merely-difficult text as an anomaly.
+ */
+const OCR_CONFIDENCE_ANOMALY_FLOOR = 40;
+
+/** T0's own input-quality findings (`normalize.ts`) — if any of these already explain why
+ *  OCR struggled, the collapse isn't unexplained, so `MIXED_ORIENTATION_SUSPECTED` must
+ *  not also fire. Deliberately a fixed set, not "anything in REASON_CODES" — new codes
+ *  added elsewhere (extraction, integrity, security) don't belong in this list, and
+ *  wouldn't explain a raw OCR-confidence collapse regardless of what they mean. */
+const KNOWN_OCR_DEGRADATION_CODES: ReadonlySet<ReasonCode> = new Set([
+  'IMAGE_TOO_BLURRY',
+  'RESOLUTION_TOO_LOW',
+  'GLARE_OBSCURES_FIELD',
+  'DOCUMENT_CROPPED',
+  'EXTREME_SKEW',
+  'POOR_CONTRAST',
+  'OBSTRUCTED_BY_HAND',
+  'PHOTOCOPY_DEGRADED',
+]);
+
+/**
+ * True when OCR confidence collapsed for no reason T0's own quality checks already
+ * explain — the anomaly `MIXED_ORIENTATION_SUSPECTED` exists to surface (§11 in
+ * docs/DECISIONS.md). Exported and pure specifically so this judgment call is directly
+ * unit-testable without a real OCR pass or document image.
+ */
+export function isUnexplainedOcrConfidenceCollapse(
+  meanConfidence: number | null,
+  existingReasonCodes: readonly ReasonCode[],
+): boolean {
+  if (meanConfidence === null || meanConfidence >= OCR_CONFIDENCE_ANOMALY_FLOOR) return false;
+  return !existingReasonCodes.some((code) => KNOWN_OCR_DEGRADATION_CODES.has(code));
+}
+
 /** Document classes that are identity documents, for the DOB-earliest constraint. */
 const IDENTITY_CLASSES: ReadonlySet<DocumentClass> = new Set<DocumentClass>([
   'US_DRIVERS_LICENSE',
@@ -211,6 +250,24 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
       issuerConvention: inferIssuerConvention(page.textLayer),
     }).catch((error) => logTierFailure('TB_OCR', error));
     if (tbResult) costUsd += tbResult.cost_usd;
+  }
+
+  // T0's quality checks (already in `reasonCodes` via `page.reasonCodes`) all came back
+  // clean, yet OCR still collapsed — none of the usual explanations apply. Most commonly a
+  // photographed book spread (docs/DECISIONS.md §11). Checked here, not inside
+  // extractTierBOcr, because the T0 quality signal it depends on lives at this scope.
+  // `as` here is not casting away a real type error: TS's control-flow narrowing doesn't
+  // track that `ocrPage` is reassigned inside the `capturing` closure above (closures are
+  // opaque to it for this purpose), so it otherwise infers `ocrPage` can only ever be its
+  // initial `null` at this point and narrows to `never` on property access.
+  const capturedOcrPage = ocrPage as OcrPage | null;
+  if (
+    isUnexplainedOcrConfidenceCollapse(
+      capturedOcrPage === null ? null : capturedOcrPage.meanConfidence,
+      reasonCodes,
+    )
+  ) {
+    reasonCodes.push('MIXED_ORIENTATION_SUSPECTED');
   }
 
   // --- TA-MRZ, off the same OCR result -------------------------------------
