@@ -312,7 +312,13 @@ function renderReport(outcomes: Outcome[], hasKey: boolean): string {
   lines.push('');
   lines.push(`- Documents: **${total}**`);
   lines.push(`- Overall accuracy (all documents, abstentions count as unanswered): **${pct(correct / total)}**`);
-  lines.push(`- Answered (AUTO_PASS or AUTO_FAIL): **${answered.length}** — coverage ${pct(answered.length / total)}`);
+  // "Answered" = committed to a terminal decision without a human in the loop — anything
+  // but REVIEW. REJECTED belongs here alongside AUTO_PASS/AUTO_FAIL, not beside it: the
+  // whole point of the admission gate (docs/DECISIONS.md §8) is that a confident rejection
+  // is zero human touch too, the same as an auto-pass or auto-fail.
+  lines.push(
+    `- Answered (AUTO_PASS, AUTO_FAIL, or REJECTED): **${answered.length}** — coverage ${pct(answered.length / total)}`,
+  );
   lines.push(
     `- Accuracy on answered: **${answered.length ? pct(correct === 0 ? 0 : answered.filter((o) => o.correct).length / answered.length) : 'n/a'}**`,
   );

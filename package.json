@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "generate:corpus": "tsx eval/generate-corpus.ts && tsx eval/copy-samples.ts",
-    "eval": "tsx eval/run.ts",
+    "eval": "tsx --env-file-if-exists=.env.local eval/run.ts",
     "test": "vitest run"
   },
   "dependencies": {
