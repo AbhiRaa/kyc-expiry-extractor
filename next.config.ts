@@ -39,6 +39,13 @@ const nextConfig: NextConfig = {
    */
   outputFileTracingIncludes: {
     '/api/extract': ['./node_modules/**/*'],
+    // /api/eval-gate runs the same tesseract.js-dependent pipeline (runPipeline, via the
+    // gate's OCR presurvey and TB_OCR) against the eval corpus — same failure mode, same
+    // fix. Found live in production (not locally: `next dev`/`next build` never run
+    // Vercel's separate deploy-time file tracer at all), the exact scenario the comment
+    // above already documents for /api/extract — this route was just never added when it
+    // was created.
+    '/api/eval-gate': ['./node_modules/**/*'],
   },
 };
 

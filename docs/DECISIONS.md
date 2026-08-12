@@ -972,3 +972,31 @@ for no visible reason rather than a response to anything the viewer just did. Re
 that feedback: the section always starts closed, exactly like before this feature, and the
 "verified live just now" badge still correctly reflects state the moment someone opens it
 themselves.
+
+## 14. `/api/eval-gate` missed an existing production fix — found by actually deploying
+
+`next.config.ts` already carries `outputFileTracingIncludes: { '/api/extract': [...] }`,
+with its own detailed comment explaining why: Vercel's deploy-time file tracer is a
+separate step from `next build`/`next dev` — it decides which files actually ship in each
+route's serverless function by statically following `require`/`import`, and tesseract.js's
+Node worker (`worker-script/node/index.js`) does a bare `require('..')` plus further
+runtime-computed requires for its own dependencies (`bmp-js`, `zlibjs`, ...) — patterns a
+static tracer cannot follow. The existing fix ships the whole of `node_modules` for that
+one route rather than chasing the transitive closure package by package.
+
+`/api/eval-gate` runs the identical tesseract.js-dependent code path (`runPipeline`, via
+the gate's OCR presurvey and TB_OCR) and was never added to that map when the route was
+created — an oversight, not a different bug. First production request 504'd after the full
+120s `maxDuration`; Vercel's runtime error aggregation (`get_runtime_errors`) showed the
+real cause directly: `Error: Cannot find module '..'`, `requireStack:
+['.../tesseract.js/src/worker-script/node/index.js']` — the exact failure mode the existing
+comment already documents, just on a route the fix's list hadn't caught up to yet.
+
+**This is invisible locally by construction, not a testing gap** — `next dev` and
+`next build` never run Vercel's separate file tracer at all, so no amount of local
+`npm test`/`next build`/manual dev-server checking this session could have caught it. Only
+an actual deploy exercises the step that fails. Confirmed `/api/extract` itself was already
+fine in production (a real OCR-tier extraction succeeded, `source_tier: TB_OCR`) before
+concluding the gap was scoped to the one route the fix's list didn't cover, rather than
+guessing a broader regression. Fixed by adding `/api/eval-gate` to the same
+`outputFileTracingIncludes` map — no application code changed, no new pattern introduced.
