@@ -10,6 +10,25 @@ import {
 } from '@/lib/reviewer-economics';
 import styles from './RoiPanel.module.css';
 
+/** Disclosure chevron — duplicated from ResultPanel.tsx (not exported there) rather than
+ *  cross-imported, matching how every sub-component's CSS module in this codebase is
+ *  self-contained. Rotated by CSS off the parent `<details open>`. */
+function Chevron() {
+  return (
+    <span className={styles.chevron} aria-hidden="true">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M8 10l4 4 4-4"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
 type Tone = 'ok' | 'warn' | 'neutral';
 
 const ADMISSION_TEXT: Record<AdmissionDecision, { tone: Tone; label: string; detail: string }> = {
@@ -154,91 +173,103 @@ export default function RoiPanel({ result }: RoiPanelProps) {
         </dl>
       </div>
 
-      <div className={styles.assumptions}>
-        <h4 className={styles.assumptionsTitle}>
-          Editable assumptions — not measured facts, drives every figure below
-        </h4>
-        <div className={styles.inputRow}>
-          <label htmlFor={`${idPrefix}-tlow`}>
-            Reviewer throughput, low
-            <input
-              id={`${idPrefix}-tlow`}
-              className={styles.input}
-              type="number"
-              min={1}
-              inputMode="decimal"
-              value={throughputLow}
-              onChange={(e) => setThroughputLow(parsePositiveNumber(e.target.value, throughputLow))}
-            />
-            <span className={styles.inputUnit}>docs/reviewer/day</span>
-          </label>
-          <label htmlFor={`${idPrefix}-thigh`}>
-            Reviewer throughput, high
-            <input
-              id={`${idPrefix}-thigh`}
-              className={styles.input}
-              type="number"
-              min={1}
-              inputMode="decimal"
-              value={throughputHigh}
-              onChange={(e) => setThroughputHigh(parsePositiveNumber(e.target.value, throughputHigh))}
-            />
-            <span className={styles.inputUnit}>docs/reviewer/day</span>
-          </label>
-          <label htmlFor={`${idPrefix}-cost`}>
-            Loaded reviewer cost
-            <input
-              id={`${idPrefix}-cost`}
-              className={styles.input}
-              type="number"
-              min={0}
-              inputMode="decimal"
-              value={loadedCostPerHour}
-              onChange={(e) => setLoadedCostPerHour(parsePositiveNumber(e.target.value, loadedCostPerHour))}
-            />
-            <span className={styles.inputUnit}>$/reviewer-hour</span>
-          </label>
-        </div>
-      </div>
+      <details className={styles.details}>
+        <summary className={styles.summary}>
+          <Chevron />
+          See the proof: cost story across the full eval corpus
+          <span className={styles.staticBadge}>static reference, not computed live</span>
+        </summary>
+        <div className={styles.detailsBody}>
+          <div className={styles.assumptions}>
+            <h4 className={styles.assumptionsTitle}>
+              Editable assumptions — not measured facts, drives every figure below
+            </h4>
+            <div className={styles.inputRow}>
+              <label htmlFor={`${idPrefix}-tlow`}>
+                Reviewer throughput, low
+                <input
+                  id={`${idPrefix}-tlow`}
+                  className={styles.input}
+                  type="number"
+                  min={1}
+                  inputMode="decimal"
+                  value={throughputLow}
+                  onChange={(e) => setThroughputLow(parsePositiveNumber(e.target.value, throughputLow))}
+                />
+                <span className={styles.inputUnit}>docs/reviewer/day</span>
+              </label>
+              <label htmlFor={`${idPrefix}-thigh`}>
+                Reviewer throughput, high
+                <input
+                  id={`${idPrefix}-thigh`}
+                  className={styles.input}
+                  type="number"
+                  min={1}
+                  inputMode="decimal"
+                  value={throughputHigh}
+                  onChange={(e) => setThroughputHigh(parsePositiveNumber(e.target.value, throughputHigh))}
+                />
+                <span className={styles.inputUnit}>docs/reviewer/day</span>
+              </label>
+              <label htmlFor={`${idPrefix}-cost`}>
+                Loaded reviewer cost
+                <input
+                  id={`${idPrefix}-cost`}
+                  className={styles.input}
+                  type="number"
+                  min={0}
+                  inputMode="decimal"
+                  value={loadedCostPerHour}
+                  onChange={(e) => setLoadedCostPerHour(parsePositiveNumber(e.target.value, loadedCostPerHour))}
+                />
+                <span className={styles.inputUnit}>$/reviewer-hour</span>
+              </label>
+            </div>
+          </div>
 
-      <div className={styles.corpusRef}>
-        <h4 className={styles.assumptionsTitle}>Proven on the evaluation corpus</h4>
-        <dl className={styles.facts}>
-          <div>
-            <dt>Containment (never reached the paid tier)</dt>
-            <dd className={styles.mono}>
-              {CORPUS_REFERENCE.containedCount}/{CORPUS_REFERENCE.adversarialTotal} ({corpusContainmentPct}%)
-            </dd>
+          <div className={styles.corpusRef}>
+            <h4 className={styles.assumptionsTitle}>Proven on the evaluation corpus</h4>
+            <dl className={styles.facts}>
+              <div>
+                <dt>Containment (never reached the paid tier)</dt>
+                <dd className={styles.mono}>
+                  {CORPUS_REFERENCE.containedCount}/{CORPUS_REFERENCE.adversarialTotal} (
+                  {corpusContainmentPct}%)
+                </dd>
+              </div>
+              <div>
+                <dt>Out-of-domain rejection rate</dt>
+                <dd className={styles.mono}>
+                  {CORPUS_REFERENCE.rejectedCount}/{CORPUS_REFERENCE.adversarialTotal} ({corpusRejectionPct}
+                  %)
+                </dd>
+              </div>
+              <div>
+                <dt>False rejections on valid documents</dt>
+                <dd className={styles.mono}>
+                  {CORPUS_REFERENCE.falseRejectCount}/{CORPUS_REFERENCE.nonAdversarialTotal} — must be zero
+                </dd>
+              </div>
+              <div>
+                <dt>Spend avoided across the corpus</dt>
+                <dd className={styles.mono}>{fmtUsd(CORPUS_REFERENCE.spendAvoidedUsd)}</dd>
+              </div>
+              <div>
+                <dt>Reviewer time avoided, at your assumptions above</dt>
+                <dd className={styles.mono}>
+                  {fmtMinutesRange(corpusMinutes.low, corpusMinutes.high)} ·{' '}
+                  {fmtUsdRange(corpusDollars.low, corpusDollars.high)}
+                </dd>
+              </div>
+            </dl>
+            <p className={styles.sourceNote}>
+              35-document synthetic corpus, commit <code>{CORPUS_REFERENCE.sourceCommit}</code> — these
+              five numbers are fixed reference figures from that run, not computed by this page.
+              Reproduce them yourself: <code>npm run eval</code> in the repository.
+            </p>
           </div>
-          <div>
-            <dt>Out-of-domain rejection rate</dt>
-            <dd className={styles.mono}>
-              {CORPUS_REFERENCE.rejectedCount}/{CORPUS_REFERENCE.adversarialTotal} ({corpusRejectionPct}%)
-            </dd>
-          </div>
-          <div>
-            <dt>False rejections on valid documents</dt>
-            <dd className={styles.mono}>
-              {CORPUS_REFERENCE.falseRejectCount}/{CORPUS_REFERENCE.nonAdversarialTotal} — must be zero
-            </dd>
-          </div>
-          <div>
-            <dt>Spend avoided across the corpus</dt>
-            <dd className={styles.mono}>{fmtUsd(CORPUS_REFERENCE.spendAvoidedUsd)}</dd>
-          </div>
-          <div>
-            <dt>Reviewer time avoided, at your assumptions above</dt>
-            <dd className={styles.mono}>
-              {fmtMinutesRange(corpusMinutes.low, corpusMinutes.high)} ·{' '}
-              {fmtUsdRange(corpusDollars.low, corpusDollars.high)}
-            </dd>
-          </div>
-        </dl>
-        <p className={styles.sourceNote}>
-          35-document synthetic corpus, commit <code>{CORPUS_REFERENCE.sourceCommit}</code> —
-          regenerate via <code>npm run eval</code>.
-        </p>
-      </div>
+        </div>
+      </details>
     </div>
   );
 }

@@ -100,11 +100,68 @@
 
 .assumptions,
 .corpusRef {
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Only corpusRef gets the divider — assumptions is detailsBody's first child, right under
+   the summary, which already reads as its own section. */
+.corpusRef {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+/* Nested inside .card, which already has its own border/background — no second border
+   here, just a top divider from "This document" above, matching the ResultPanel disclosure
+   pattern's structure without its outer box (that would read as a card-within-a-card). */
+.details {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  list-style: none;
+}
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.chevron {
+  display: flex;
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.details[open] > .summary .chevron {
+  transform: rotate(0deg);
+}
+
+.staticBadge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: var(--surface-alt);
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.detailsBody {
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .assumptionsTitle {
