@@ -961,6 +961,14 @@ document's verdict, and the button must stay usable whether or not anyone has up
 anything yet. Once a check completes, its result is threaded down through `ResultPanel` to
 `RoiPanel` as `liveGateCheck`, which prefers it over the static `CORPUS_REFERENCE` fallback
 when present — the static numbers never disappear, they're just superseded the moment a
-real one exists, and the panel's disclosure auto-opens (`<details open={corpus.isLive}>`)
-to actually show it rather than leaving the proof one click further away than the button
-that just fetched it.
+real one exists.
+
+The disclosure itself does **not** auto-open when a live result lands (`<details
+open={corpus.isLive}>` was tried and reverted). It sounded helpful — reveal the proof the
+moment it's fetched — but the trigger and the disclosure live in different parts of the
+page (sidebar button, main-panel card), so the "reveal" could fire well after the click, on
+an unrelated later action (the next document extracted), which reads as a box popping open
+for no visible reason rather than a response to anything the viewer just did. Reverted on
+that feedback: the section always starts closed, exactly like before this feature, and the
+"verified live just now" badge still correctly reflects state the moment someone opens it
+themselves.

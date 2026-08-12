@@ -214,7 +214,7 @@ export default function RoiPanel({ result, liveGateCheck }: RoiPanelProps) {
         </dl>
       </div>
 
-      <details className={styles.details} open={corpus.isLive}>
+      <details className={styles.details}>
         <summary className={styles.summary}>
           <Chevron />
           See the proof: cost story across the full eval corpus
