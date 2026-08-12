@@ -142,6 +142,58 @@ describe('unlabelled expiry is resolved by elimination, not by label matching', 
 });
 
 // ---------------------------------------------------------------------------
+// A candidate a tier found raw text for, but could not resolve to a specific
+// calendar date (iso: null — typically AMBIGUOUS_DATE_FORMAT), must show up in
+// `eliminated` rather than vanishing from both `survivors` and `eliminated`.
+// Found on a real Indian driving licence: the true expiry silently disappeared
+// from the response's date inventory, indistinguishable from a date that was
+// never found at all.
+// ---------------------------------------------------------------------------
+
+describe('an unresolved (iso: null) candidate is visible, not silently dropped', () => {
+  it('is eliminated with a reason rather than appearing in neither survivors nor eliminated', () => {
+    const outcome = runConstraintEngine({
+      today: TODAY,
+      isIdentityDocument: true,
+      candidates: [makeCandidate({ iso: null, role: 'EXPIRY', raw: '02-03-2039' })],
+    });
+
+    expect(outcome.survivors).toHaveLength(0);
+    expect(outcome.eliminated).toHaveLength(1);
+    expect(outcome.eliminated[0].eliminatedBy).toBe(
+      'Could not resolve "02-03-2039" to a specific calendar date',
+    );
+  });
+
+  it('does not fabricate an elimination for a candidate with no raw text at all', () => {
+    // Defensive: makeCandidate defaults `raw` to '' when neither raw nor iso is given.
+    // Nothing was actually found here, so there is nothing to report as eliminated.
+    const outcome = runConstraintEngine({
+      today: TODAY,
+      isIdentityDocument: true,
+      candidates: [makeCandidate({ iso: null, role: 'UNKNOWN', raw: '' })],
+    });
+
+    expect(outcome.survivors).toHaveLength(0);
+    expect(outcome.eliminated).toHaveLength(0);
+  });
+
+  it('still lets a resolvable candidate win when an unresolved one is also present', () => {
+    const outcome = runConstraintEngine({
+      today: TODAY,
+      isIdentityDocument: true,
+      candidates: [
+        makeCandidate({ iso: null, role: 'EXPIRY', raw: '02-03-2039' }),
+        makeCandidate({ iso: '2030-06-15', role: 'EXPIRY', raw: '06-15-2030' }),
+      ],
+    });
+
+    expect(outcome.survivors.map((c) => c.iso)).toEqual(['2030-06-15']);
+    expect(outcome.eliminated.map((c) => c.raw)).toContain('02-03-2039');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // §1 known trap — both halves
 // ---------------------------------------------------------------------------
 

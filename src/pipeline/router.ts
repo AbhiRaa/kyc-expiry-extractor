@@ -37,6 +37,7 @@ import {
 } from '@/types/contract';
 import { fuseConfidence, route } from '@/engine/confidence';
 import { type DateCandidate, makeCandidate, runConstraintEngine } from '@/engine/constraints';
+import { normalizeFreeTextDate } from '@/engine/dates';
 import {
   BASIS_BY_CLASS,
   evaluateValidity,
@@ -273,6 +274,7 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
 
   // --- TC: only when TA and TB both abstained, AND the gate admits it -------
   let tcResult: TierResult | null = null;
+  let issuerConventionAtDispatch: 'US' | 'DMY' | null = null;
   const needVlm = !deterministicWon && (!tbResult || tbResult.abstained);
   if (needVlm && admitLimited) {
     // The gate found no positive domain signal (NO_DOMAIN_SIGNAL) and capped this
@@ -295,10 +297,14 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
     const vlmImageBuffer = zone
       ? await cropAndDownscale(page.fullResolution, zone, DOWNSCALE_LONG_EDGE).catch(() => page.downscaled)
       : page.downscaled;
+    // Saved for the retroactive re-resolution below: this is the convention TC's own date
+    // parsing actually used, computed off the PRE-TC class guess — which is exactly the
+    // value most likely to be wrong for a document TC itself ends up correctly identifying.
+    issuerConventionAtDispatch = inferIssuerConvention(classification.issuer, documentClass);
     tcResult = await runTierCVlm(input.vlmClient, {
       image: { base64: vlmImageBuffer.toString('base64'), mediaType: 'image/jpeg' },
       documentClass,
-      issuerConvention: inferIssuerConvention(classification.issuer),
+      issuerConvention: issuerConventionAtDispatch,
       today,
       budgetUsd: input.budgetUsd,
       timeBudgetMs: Math.max(0, budgetMs - (Date.now() - started)),
@@ -319,6 +325,35 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
   if (classification.inconclusive && tcResult?.mapper_document_class) {
     documentClass = tcResult.mapper_document_class;
     classConfidence = TC_CLASSIFICATION_CONFIDENCE;
+  }
+
+  // --- Retroactively re-resolve dates TC left ambiguous, now that the class is known ----
+  // Found on a real Indian driving licence: no MRZ, no barcode, no OCR label match, so the
+  // PRE-TC guess (the only thing available when TC was dispatched) defaulted to
+  // US_DRIVERS_LICENSE off aspect ratio alone — wrong, but a reasonable prior with zero
+  // text to go on. `issuerConvention` at dispatch time was therefore unresolved, and a
+  // genuinely either-way date (day and month both ≤12) came back `ambiguous`. Only once TC
+  // had actually read the page did `mapper_document_class` correctly say
+  // NON_US_DRIVERS_LICENSE — by which point the same call had already run with the wrong
+  // convention. Firing a second VLM call to re-read with the corrected class would double
+  // the spend on every document that ever needs this path; the raw date strings TC already
+  // returned are enough to re-run the same PURE normalization function locally, for free.
+  const issuerConventionNow = inferIssuerConvention(classification.issuer, documentClass);
+  if (
+    tcResult &&
+    !tcResult.abstained &&
+    issuerConventionNow &&
+    issuerConventionNow !== issuerConventionAtDispatch
+  ) {
+    for (const candidate of tcResult.candidates) {
+      if (candidate.iso !== null || !candidate.raw) continue;
+      const reresolved = normalizeFreeTextDate(candidate.raw, {
+        issuerConvention: issuerConventionNow,
+        role: candidate.role,
+        today,
+      });
+      if (reresolved.iso !== null) candidate.iso = reresolved.iso;
+    }
   }
 
   // --- Tier results, ordered by SOURCE AUTHORITY, not execution order ------
@@ -526,12 +561,29 @@ function dateTripleOf(result: TierResult): DateTriple {
  * non-US place now resolves to DMY. A long blob (e.g. a whole page's text layer, passed at
  * the TB call site below) is not a clean issuer signal, so it still falls through to null
  * rather than guessing a convention from incidental words in unrelated body text.
+ *
+ * `documentClass` is a second, independent signal, added after the same bug reproduced on
+ * a real Indian *driving licence* — no MRZ, no barcode, so `resolveIssuer` (`classify.ts`)
+ * had nothing to work with at all: it only ever recognises a US state name in OCR text or
+ * an MRZ/barcode-derived hint, never a foreign country name. `documentClass`, by contrast,
+ * is already known and already confident by the time TC is dispatched (T0.6 classification
+ * runs before TC), and a class that structurally distinguishes "non-US" from its US
+ * counterpart — `NON_US_DRIVERS_LICENSE`, `NATIONAL_ID_CARD` — is itself an issuer-
+ * convention signal: it doesn't require naming which country issued the document, only
+ * that classification already ruled out "US". `RESIDENCE_PERMIT` and `PASSPORT` are
+ * deliberately excluded — both classes cover US-issued instances too (a green card/EAD, a
+ * US passport), so the class alone can't tell US from non-US the way it can here.
  */
-function inferIssuerConvention(issuer: string | null): 'US' | 'DMY' | null {
-  if (!issuer) return null;
-  const upper = issuer.toUpperCase();
-  if (upper === 'USA' || /^[A-Z]{2}$/.test(issuer) || /\bUNITED STATES\b/.test(upper)) return 'US';
-  if (upper.length <= 60 && /[A-Z]/.test(upper)) return 'DMY';
+function inferIssuerConvention(
+  issuer: string | null,
+  documentClass?: DocumentClass,
+): 'US' | 'DMY' | null {
+  if (issuer) {
+    const upper = issuer.toUpperCase();
+    if (upper === 'USA' || /^[A-Z]{2}$/.test(issuer) || /\bUNITED STATES\b/.test(upper)) return 'US';
+    if (upper.length <= 60 && /[A-Z]/.test(upper)) return 'DMY';
+  }
+  if (documentClass === 'NON_US_DRIVERS_LICENSE' || documentClass === 'NATIONAL_ID_CARD') return 'DMY';
   return null;
 }
 

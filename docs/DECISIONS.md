@@ -673,3 +673,73 @@ in `npm test` cannot depend on those files without breaking on a fresh clone tha
 run corpus generation yet. `buildCrmPayload` and `deliverCrmPayload` themselves are fully
 unit-tested (`src/pipeline/crm.test.ts`) with no such dependency, since neither touches
 the filesystem.
+
+## 10. A real document surfaces a date-parsing bug the synthetic corpus never could
+
+Found on a real Indian driving licence uploaded during manual testing, not by the eval
+harness — the exact gap §8's own corpus-honesty section already warns about (a synthetic
+corpus proves logic, never a real capture's actual failure modes). No PII from the
+document is reproduced here; only the shape of the bug.
+
+### D1 — the actual failure: two bugs stacked, not one
+
+The DL prints `Issue Date: 16-02-2023` and `Validity (NT): 02-03-2039` (DD-MM-YYYY,
+standard everywhere outside the US). The system returned `INDETERMINATE` with the real
+expiry nowhere in the response — not misread, not misclassified as issue date, just gone.
+
+1. **`inferIssuerConvention` (`router.ts`) never received a usable signal.** It takes
+   `classification.issuer`, which `resolveIssuer` (`classify.ts`) can only populate from
+   an MRZ, a barcode hint, or a literal US state name matched in OCR text — never a
+   foreign country name. This DL has no MRZ and no barcode, so `classification.issuer`
+   was `null`, `issuerConvention` was `null`, and `02-03-2039` — day and month both ≤12,
+   genuinely ambiguous either way — hit `engine/dates.ts`'s "no convention, cannot
+   resolve" branch: `iso: null, ambiguous: true`. A near-identical bug was already found
+   and partially fixed once before on a real Indian *passport* (see the comment on
+   `inferIssuerConvention` itself) — that fix works when an MRZ supplies the issuer name;
+   a DL with neither an MRZ nor a barcode has no such fallback at all, so the same root
+   cause resurfaced through a gap the earlier fix didn't cover.
+2. **`applyHardConstraints` (`engine/constraints.ts`) silently dropped it.** The
+   per-candidate loop skipped any candidate with `iso: null` outright (`if (!candidate.iso)
+   continue`), so it landed in neither `survivors` (requires `iso`) nor `eliminated`
+   (requires `eliminatedBy`, never set for a merely-unresolved candidate). The date wasn't
+   wrong — it was invisible, indistinguishable in the response from a date that was never
+   found at all. This directly contradicted the file's own header comment: the inventory
+   exists specifically so every candidate's fate is legible, not just the ones that
+   resolved cleanly.
+
+### D2 — the fix that didn't work, and why
+
+The first attempt broadened `inferIssuerConvention` with a `documentClass` fallback:
+`NON_US_DRIVERS_LICENSE` / `NATIONAL_ID_CARD` already mean "confidently not US," no
+country name required. Correct in principle, but verified wrong in practice: at the
+moment TC is actually dispatched, `documentClass` is still classify.ts's **pre-TC** guess
+— and with zero OCR text to work with (TB had already abstained; that's *why* TC runs at
+all), that guess defaulted to `US_DRIVERS_LICENSE` off aspect ratio alone (`inconclusive:
+true`, confidence 0.73). Confirmed by direct instrumentation, not assumed: TC's own
+`mapper_document_class` correctly said `NON_US_DRIVERS_LICENSE` only *after* running —
+the exact same call whose input needed to know that already. Fixing this at the call site
+alone cannot work; the class isn't reliably known until the call it would inform has
+already happened.
+
+### D3 — the fix that did: re-resolve locally, using what TC already paid for
+
+`router.ts` already reconsiders `documentClass` after TC returns, when
+`classification.inconclusive && tcResult?.mapper_document_class` — that machinery just
+never fed anything back into the dates TC had already parsed. Now it does: once the
+class is corrected, if the newly-inferred `issuerConvention` differs from what was used
+at dispatch, every `tcResult` candidate still sitting at `iso: null` gets re-run through
+`normalizeFreeTextDate` (pure, already exported, `engine/dates.ts`) with the corrected
+convention, using the **raw strings TC already returned** — no second VLM call, no
+additional spend, on a corpus where TC is already the expensive tail (§ Results). This is
+deliberately narrow: it only touches candidates TC itself couldn't resolve, never
+overrides a candidate that already has a value, and changes nothing when the class
+guess was right the first time (the common case).
+
+Verified against the real document with the actual fix, not a synthetic stand-in: the
+same DL now returns `validity.date: "2039-03-02"`, `verdict: VALID`, with the date
+inventory showing `02-03-2039 -> 2039-03-02` as the winning `EXPIRY` candidate and the
+issue date correctly excluded — instead of `INDETERMINATE` with nothing to show why.
+`npm run eval` against the full synthetic corpus is byte-for-byte unchanged in every
+decision (only real-API latency/cost noise moved), confirming neither fix disturbs any
+existing behavior — D3's guard conditions mean it is a no-op everywhere this exact
+timing gap doesn't apply.

@@ -156,7 +156,23 @@ export function applyHardConstraints(ctx: ConstraintContext): ConstraintOutcome 
   // --- Per-candidate elimination ---
 
   for (const candidate of candidates) {
-    if (!candidate.iso) continue;
+    if (!candidate.iso) {
+      // The tier found *something* here — a raw string, possibly a role — but could not
+      // resolve it to a specific calendar date (typically AMBIGUOUS_DATE_FORMAT: day and
+      // month both valid either reading, no issuer convention to break the tie). Previously
+      // this candidate matched neither `survivors` (requires `iso`) nor `eliminated`
+      // (requires `eliminatedBy`), so it vanished from `all_dates_found` entirely — visually
+      // indistinguishable from a date that was never found at all. Those are different
+      // findings, and the file header above is explicit that this inventory exists
+      // specifically to make that distinction legible, not just for candidates that
+      // resolved cleanly. An empty `raw` means the tier never had this candidate at all, so
+      // there is genuinely nothing to eliminate here.
+      if (candidate.raw) {
+        checked++;
+        eliminate(candidate, `Could not resolve "${candidate.raw}" to a specific calendar date`);
+      }
+      continue;
+    }
 
     // A role a tier positively identified as something else disqualifies the candidate
     // outright — this also covers DOB/ISSUE, which additionally serve as the *reference*
