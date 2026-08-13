@@ -13,6 +13,7 @@
  * most common in-domain class, not a cosmetic bug.
  */
 
+import bwipjs from 'bwip-js/node';
 import { describe, expect, it, vi } from 'vitest';
 import type { OcrPage } from './tier-b-ocr';
 import {
@@ -26,6 +27,31 @@ import {
   rowInkHistogram,
 } from './gate';
 import { CLASS_KEYWORDS } from './classify';
+
+/** Real PDF417 symbol, bwip-js → Uint8Array — same round-trip approach as
+ *  tier-a-pdf417.test.ts, for the same reason: mocking the decoder would only prove the
+ *  gate can read a string handed to it, not that a real barcode drives it correctly. */
+async function renderPdf417(payload: string): Promise<Uint8Array> {
+  const png = await bwipjs.toBuffer({
+    bcid: 'pdf417',
+    text: payload,
+    scale: 4,
+    paddingwidth: 10,
+    paddingheight: 10,
+    backgroundcolor: 'FFFFFF',
+  });
+  return new Uint8Array(png);
+}
+
+/** A minimal, structurally-real AAMVA header + one element — enough for
+ *  `parseAamvaPayload` to succeed, which is all the gate's own check requires. */
+const AAMVA_DL_PAYLOAD =
+  '@\n\x1e\rANSI 63601410000102DL00410008DAQI1234562\r';
+
+/** A real IATA BCBP (Bar Coded Boarding Pass) payload — the standard format printed as a
+ *  PDF417 symbol on real US boarding passes. Genuinely decodable, structurally nothing
+ *  like AAMVA (no ANSI/AAMVA compliance header, no DL/ID subfile designators). */
+const BOARDING_PASS_PAYLOAD = 'M1DOE/JOHN            EABC123 JFKLAXAA 0123 186Y012C0042 100';
 
 function solidRaster(width: number, height: number, value: number): Uint8Array {
   return new Uint8Array(width * height).fill(value);
@@ -245,6 +271,47 @@ describe('signal 3 — positive domain signal', () => {
       ocr,
     });
     expect(result.outcome).toBe('NOT_FOUND');
+  });
+
+  it('admits a real AAMVA-structured PDF417 barcode', async () => {
+    const ocr = vi.fn(async () => emptyOcrPage());
+    const result = await evaluatePositiveDomainSignal({
+      fullResolution: Buffer.alloc(0),
+      fullWidth: 100,
+      fullHeight: 100,
+      downscaled: Buffer.from(await renderPdf417(AAMVA_DL_PAYLOAD)),
+      quad: null,
+      perspectiveCorrected: false,
+      exifBytesLength: null,
+      textLayer: null,
+      ocr,
+    });
+    expect(result.outcome).toBe('CONFIDENT_POSITIVE');
+    expect(result.evidence).toContain('pdf417=aamva');
+    expect(ocr).not.toHaveBeenCalled();
+  });
+
+  it('does NOT admit a real, decodable, but non-AAMVA PDF417 barcode (e.g. a boarding pass) on the barcode alone', async () => {
+    // A real IATA BCBP boarding-pass barcode decodes just as successfully as an AAMVA
+    // one — PDF417 is a general-purpose symbology, not KYC-specific. Before this fix,
+    // "decode succeeded" alone was treated as CONFIDENT_POSITIVE here, which let a real
+    // boarding pass reach ADMIT_FULL and the paid VLM tier in production (docs/DECISIONS.md).
+    const ocr = vi.fn(async () => emptyOcrPage());
+    const result = await evaluatePositiveDomainSignal({
+      fullResolution: Buffer.alloc(0),
+      fullWidth: 100,
+      fullHeight: 100,
+      downscaled: Buffer.from(await renderPdf417(BOARDING_PASS_PAYLOAD)),
+      quad: null,
+      perspectiveCorrected: false,
+      exifBytesLength: null,
+      textLayer: null,
+      ocr,
+    });
+    // Falls through to the OCR presurvey (which finds nothing here) rather than admitting
+    // on the barcode decode alone — NOT_FOUND, never CONFIDENT_POSITIVE.
+    expect(result.outcome).toBe('NOT_FOUND');
+    expect(ocr).toHaveBeenCalledOnce();
   });
 });
 

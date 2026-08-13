@@ -1082,3 +1082,57 @@ upload both resolve `REJECTED` with `crm_payload` and `admission` both `undefine
 existing `CORRUPT_FILE` fixture from `normalize.test.ts` still resolves `REVIEW` with a
 `crm_payload` present, guarding against the split ever silently swallowing a kind it
 shouldn't.
+
+## 16. A real boarding pass reached the paid VLM tier — decode success on any PDF417
+symbol was being treated as KYC-specific evidence
+
+Follow-on from §15's audit, prompted by a direct client question: what happens if a
+reviewer uploads something ordinary but non-KYC, like a receipt or a boarding pass? Rather
+than reason about it, both were tested against the live production deployment.
+
+**The receipt: no problem.** `decision: REVIEW`, `confidence: 0`, `cost_usd: 0`,
+`all_dates_found: []`. `ADMIT_LIMITED` at the gate, contained, and correctly abstains
+downstream — an honest "I don't know," not a failure. This is what the asymmetry rule is
+supposed to produce for genuinely ambiguous input, confirmed live rather than assumed.
+
+**The boarding pass: a real gap, confirmed with real money.** A synthetic boarding pass
+was built with a genuine, decodable IATA BCBP (Bar Coded Boarding Pass) PDF417 barcode —
+the same symbology real US boarding passes use — composited with ordinary boarding-pass
+text (passenger name, flight, seat, gate). Against production, before this fix:
+`admission.decision: ADMIT_FULL`, `POSITIVE_DOMAIN_SIGNAL: CONFIDENT_POSITIVE` on
+`"pdf417=decoded"`, `evidence.source_tier: TC_VLM`, **`cost_usd: 0.018657`** — a real,
+metered VLM call, on a document that is obviously not a KYC document. The final decision
+was still safe (`REVIEW`, `confidence: 0.17`, the one date found was correctly eliminated
+as `"Role TRANSACTION is never the validity-determining date"`) — so this was never a
+correctness bug in the sense of a confidently wrong answer. It was a cost-containment bug,
+and specifically a contradiction of this project's own headline claim: the ROI panel and
+§8's whole design record are about the gate containing non-KYC input *before* it costs
+money, and a common, everyday document walked straight through the front door.
+
+**Root cause.** `evaluatePositiveDomainSignal`'s barcode check (`gate.ts`) treated any
+successful PDF417 decode as strong positive evidence, reasoning that a decode is
+self-validating via the symbol's own Reed-Solomon ECC. True, but beside the point: PDF417
+is a general-purpose symbology — boarding passes, shipping labels, retail loyalty cards
+and event tickets all use it too. A clean decode proves "this is a real PDF417 barcode," not
+"this is a driver's licence." The only legitimate KYC use of PDF417 anywhere in this system
+is an AAMVA driver's-licence/ID card back (passports and residence permits use MRZ text,
+never a barcode).
+
+**Fix.** The decoded payload must now also parse as AAMVA-structured data:
+`parseAamvaPayload(barcodeText) !== null`, reusing the exact function TA-PDF417 itself
+already relies on for real extraction (`tier-a-pdf417.ts`), not a new or duplicated check.
+`parseAamvaPayload` returns `null` only when the ANSI/AAMVA compliance header fails to
+match — a real boarding pass's BCBP payload (`M1DOE/JOHN...`) has no such header and now
+correctly falls through to `NOT_FOUND`, capping admission at `ADMIT_LIMITED`. A genuine
+AAMVA barcode is completely unaffected — the header check is the same one that already
+gates real extraction, so nothing that used to work stops working.
+
+**Verification.** `gate.test.ts` gained two real-barcode round-trip tests (bwip-js →
+`evaluatePositiveDomainSignal`, no mocking, same approach `tier-a-pdf417.test.ts` already
+uses): a genuine AAMVA payload still resolves `CONFIDENT_POSITIVE`; the exact BCBP payload
+from the boarding-pass reproduction resolves `NOT_FOUND`. The full corpus re-run post-fix
+reproduces the committed numbers exactly (`7/7` contained, `4/7` rejected, `0/28`
+false-reject, `$0.88` avoided) — the fix is invisible to every genuine AAMVA barcode in the
+corpus (docs 02/03/04/06/26/27/28), as it should be. The boarding-pass reproduction was
+re-run against the fix directly: `admission.decision: ADMIT_LIMITED`, `cost_usd: 0`,
+`spend_avoided_usd: 0.08` — the gate now reports the exact spend it used to silently incur.

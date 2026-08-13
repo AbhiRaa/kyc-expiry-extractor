@@ -37,7 +37,7 @@ import {
 } from '@/types/contract';
 import { CLASS_KEYWORDS, shapeClass } from './classify';
 import { type DocumentQuad, grayscaleWorkRaster, luminanceStats } from './normalize';
-import { type BarcodeImage, decodePdf417 } from './tier-a-pdf417';
+import { type BarcodeImage, decodePdf417, parseAamvaPayload } from './tier-a-pdf417';
 import {
   type OcrRunner,
   estimateMachineReadableZone,
@@ -458,14 +458,23 @@ function positiveOutcome(detail: string, evidence: string[]): GateSignalOutcome 
 
 export async function evaluatePositiveDomainSignal(input: GateInput): Promise<GateSignalOutcome> {
   // 1. Coarse barcode check on the already-downscaled buffer — zero extra resize.
-  // Decode SUCCESS is strong positive evidence (self-validating via the barcode's own
-  // Reed-Solomon ECC, same reasoning TA-PDF417 itself relies on). Decode FAILURE at this
-  // resolution is ambiguous, not negative — decodePdf417's own doc comment notes narrow
-  // bars fall under one pixel below ~150 DPI, so a miss here just falls through to the
-  // next check, per the asymmetry rule.
+  // Decode SUCCESS alone is NOT enough: PDF417 is a general-purpose symbology (boarding
+  // passes, shipping labels, retail loyalty cards, event tickets all use it too), so a
+  // decoded symbol only proves "this is a PDF417 barcode," not "this is a KYC document."
+  // The one and only legitimate KYC use of PDF417 in this system is an AAMVA driver's-
+  // licence/ID card back (passports and residence permits use MRZ text, not a barcode at
+  // all) — so the decoded payload must also parse as AAMVA-structured data, the same check
+  // TA-PDF417 itself already relies on for real extraction (parseAamvaPayload, same file),
+  // reused here rather than re-implemented. Found live: a synthetic boarding pass with a
+  // real, valid IATA BCBP PDF417 barcode reached ADMIT_FULL and TC_VLM (real spend) before
+  // this fix, on the strength of "a PDF417 symbol decoded" alone — see docs/DECISIONS.md.
+  // Decode FAILURE at this resolution is still ambiguous, not negative — decodePdf417's own
+  // doc comment notes narrow bars fall under one pixel below ~150 DPI — so a miss, or a
+  // decode that isn't AAMVA-shaped, both just fall through to the next check, per the
+  // asymmetry rule.
   const barcodeText = await decodePdf417(input.downscaled as BarcodeImage).catch(() => null);
-  if (barcodeText) {
-    return positiveOutcome('PDF417-shaped region decoded at coarse resolution', ['pdf417=decoded']);
+  if (barcodeText && parseAamvaPayload(barcodeText) !== null) {
+    return positiveOutcome('AAMVA-structured PDF417 decoded at coarse resolution', ['pdf417=aamva']);
   }
 
   // 2. Free when present: a text-native PDF's embedded text layer (§11.1 #6) costs
