@@ -22,7 +22,7 @@ import { NextResponse } from 'next/server';
 
 import { ANCHOR_TODAY } from '@/lib/anchor-date';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
-import { normalizeDocument, isNormalized } from '@/pipeline/normalize';
+import { normalizeDocument } from '@/pipeline/normalize';
 import { runPipeline } from '@/pipeline/router';
 import type { GateCorpusCheckResult } from '@/types/gate-check';
 
@@ -96,14 +96,11 @@ export async function POST(request: Request): Promise<NextResponse> {
     await runBatch(manifest, CONCURRENCY, async (doc) => {
       const bytes = new Uint8Array(await readFile(path.join(EVAL_CORPUS_DIR, doc.filename)));
       const outcome = await normalizeDocument(bytes, { declaredName: doc.filename });
-
-      // A T0-level rejection (corrupt/unsupported bytes) never reaches the gate at all —
-      // trivially contained (nothing ran), never a rejection either way.
-      if (!isNormalized(outcome)) {
-        if (doc.adversarial) containedCount++;
-        return;
-      }
-
+      // runPipeline handles T0 rejections internally (router.ts's rejectionResponse() /
+      // terminalRejectionResponse()) — called unconditionally here, exactly like
+      // eval/run.ts's own harness does, so a T0-level rejection's real decision (REJECTED
+      // for EMPTY_FILE/UNSUPPORTED_TYPE, REVIEW for the rest) is what gets counted below,
+      // not a hand-rolled guess that can drift from what the router actually returns.
       const response = await runPipeline({ outcome, today }); // no vlmClient — see file header
       spendAvoidedUsd += response.admission?.spend_avoided_usd ?? 0;
 

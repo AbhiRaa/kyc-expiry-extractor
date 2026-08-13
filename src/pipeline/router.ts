@@ -51,6 +51,7 @@ import {
   isNormalized,
   type NormalizedPage,
   type NormalizeOutcome,
+  type NormalizeRejection,
   rejectionToTierResult,
 } from './normalize';
 import { classifyDocument } from './classify';
@@ -182,7 +183,9 @@ export async function runPipeline(input: RouterInput): Promise<ExtractionRespons
 
   // --- T0 -----------------------------------------------------------------
   if (!isNormalized(input.outcome)) {
-    return rejectionResponse(requestId, input.outcome, today, Date.now() - started, input.applicantRef);
+    return isTerminalT0Rejection(input.outcome)
+      ? terminalRejectionResponse(requestId, input.outcome, today, Date.now() - started)
+      : rejectionResponse(requestId, input.outcome, today, Date.now() - started, input.applicantRef);
   }
 
   const doc = input.outcome;
@@ -780,18 +783,86 @@ function rejectionResponse(
     timing_ms: { total: totalMs, normalize: totalMs, tier: 0 },
     cost_usd: 0,
   };
-  // decision is REVIEW, never REJECTED — a corrupt/unsupported file still gets a CRM
-  // payload, because a human still has to look at it. Only a gate REJECT emits nothing.
+  // decision is REVIEW here, never REJECTED — every kind that reaches this function
+  // (CORRUPT_FILE, RESOLUTION_TOO_LOW, ENCRYPTED_PDF, RENDER_FAILED) is a technical
+  // failure that could still be sitting on top of a genuine document: a truncated
+  // upload, a photo that's just too small, a PDF with a password. A human gets a
+  // CRM-visible task rather than a silent drop. EMPTY_FILE and UNSUPPORTED_TYPE never
+  // reach this function at all — see terminalRejectionResponse() below.
   return { ...response, crm_payload: buildCrmPayload(response, outcome.contentHash, applicantRef) };
 }
 
 /**
+ * EMPTY_FILE and UNSUPPORTED_TYPE are impossibilities, not uncertainties: no real KYC
+ * document is ever 0 bytes or a file whose magic bytes match nothing this system reads
+ * (§7.1 — the declared name/mime is never trusted, only the sniffed bytes are). There is
+ * nothing here a human could usefully triage, so this is the asymmetry rule (gate.ts A2)
+ * applied one layer before the gate itself: a confident negative finding about the bytes
+ * gets treated exactly like a confident negative finding about pixel content. See
+ * docs/DECISIONS.md's "T0 asymmetry rule extension" entry for the measurements behind
+ * why the *other* T0 failure kinds
+ * (CORRUPT_FILE, RESOLUTION_TOO_LOW, ENCRYPTED_PDF, RENDER_FAILED) do NOT get this
+ * treatment — each of those could still be a genuine document with a technical problem.
+ */
+const TERMINAL_T0_KINDS: ReadonlySet<NormalizeRejection['kind']> = new Set(['EMPTY_FILE', 'UNSUPPORTED_TYPE']);
+
+export function isTerminalT0Rejection(outcome: NormalizeRejection): boolean {
+  return TERMINAL_T0_KINDS.has(outcome.kind);
+}
+
+/**
+ * Terminal response for EMPTY_FILE / UNSUPPORTED_TYPE. Deliberately NOT built on top of
+ * `rejectionResponse()` above: same shape, but `decision: 'REJECTED'`, and — following
+ * `gateRejectedResponse()`'s own precedent one function down — no CRM payload, because
+ * input that was never going to be a candidate document must not create CRM noise either.
+ */
+function terminalRejectionResponse(
+  requestId: string,
+  outcome: NormalizeRejection,
+  today: Date,
+  totalMs: number,
+): ExtractionResponse {
+  console.log('[crm] T0 terminal reject — no CRM payload emitted', {
+    request_id: requestId,
+    kind: outcome.kind,
+    reason_codes: outcome.reasonCodes,
+  });
+  return {
+    request_id: requestId,
+    document: { class: 'NOT_A_DOCUMENT', class_confidence: 0, issuer: null, pages: 0, side: 'N/A' },
+    validity: {
+      basis: 'UNDETERMINED',
+      date: null,
+      date_raw: null,
+      rule_applied: 'Rejected before normalization could complete — not a candidate document',
+      verdict: 'NOT_APPLICABLE',
+      days_remaining: null,
+      evaluated_at: today.toISOString(),
+      timezone_policy: TIMEZONE_POLICY,
+    },
+    decision: 'REJECTED',
+    // Unlike the gate's 0.9 (a statistical judgment over pixel content), this is a
+    // deterministic fact about the bytes themselves — byte length, magic-byte sniffing —
+    // so full confidence is honest rather than borrowed from the gate's own convention.
+    confidence: 1,
+    reason_codes: outcome.reasonCodes.length > 0 ? outcome.reasonCodes : ['CLASS_UNRECOGNIZED'],
+    evidence: { source_tier: 'NONE', label_text: null, snippet: null, bbox: null },
+    integrity: { checksum_validated: null, checksum_detail: null, cross_source_agreement: null, anomalies: [] },
+    all_dates_found: [],
+    quality: emptyQuality(),
+    timing_ms: { total: totalMs, normalize: totalMs, tier: 0 },
+    cost_usd: 0,
+  };
+}
+
+/**
  * Terminal response for a gate REJECT — deliberately NOT built on top of
- * `rejectionResponse()` above, even though the shapes look similar. That one serves
- * T0-level "the bytes are unreadable" failures and correctly stays `REVIEW`: a broken
- * upload deserves a human's attention. A confidently out-of-domain image is a different
- * fact — the gate is SURE this was never a candidate — and must be `REJECTED` instead,
- * so it never occupies a review queue slot.
+ * `rejectionResponse()` above, even though the shapes look similar. That one serves the
+ * T0 failure kinds that could still be a genuine document with a technical problem and
+ * correctly stays `REVIEW`. A confidently out-of-domain image is a different fact — the
+ * gate is SURE this was never a candidate — and must be `REJECTED` instead, so it never
+ * occupies a review queue slot. (EMPTY_FILE/UNSUPPORTED_TYPE reach the same `REJECTED`
+ * outcome one step earlier, via `terminalRejectionResponse()` above, for the same reason.)
  */
 function gateRejectedResponse(
   requestId: string,

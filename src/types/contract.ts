@@ -349,9 +349,9 @@ export interface ExtractionResponse {
   quality: QualityMetrics;
   timing_ms: TimingMs;
   cost_usd: number;
-  /** Absent only on the pre-existing T0-level rejection path (corrupt/unsupported file),
-   *  which never reaches the gate at all — see rejectionResponse() in router.ts. Every
-   *  other path, including a gate REJECT, populates this. */
+  /** Absent only on a T0-level rejection (the file itself was unreadable or impossible —
+   *  see rejectionResponse() and terminalRejectionResponse() in router.ts), which never
+   *  reaches the gate at all. Every other path, including a gate REJECT, populates this. */
   admission?: AdmissionInfo;
   /** Absent exactly when decision === 'REJECTED' — the gate's own asymmetry rule (§8 A2)
    *  extended one layer out: input that never entered the review queue must not create

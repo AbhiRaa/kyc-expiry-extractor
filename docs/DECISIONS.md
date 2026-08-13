@@ -1000,3 +1000,85 @@ fine in production (a real OCR-tier extraction succeeded, `source_tier: TB_OCR`)
 concluding the gap was scoped to the one route the fix's list didn't cover, rather than
 guessing a broader regression. Fixed by adding `/api/eval-gate` to the same
 `outputFileTracingIncludes` map — no application code changed, no new pattern introduced.
+
+## 15. Auditing the gate for filtration headroom — and the T0 asymmetry rule extension
+
+The client's ask: verify the gate is filtering as strongly as it can — only clean documents
+should reach a human or a paid tier, no unnecessary garbage. Rather than answer from the
+existing 7/7 containment number alone, the gate's own two pure, synchronous pixel signals
+(`evaluateDocumentLikeness`, `evaluateScreenCapture` — no OCR involved) were run directly
+against the corpus's residual "leak" cases to see, with real measurements, whether there is
+any safe headroom left to tighten.
+
+**Finding 1 — two adversarial documents are contained but not hard-rejected, and cannot
+safely become hard-rejected.**
+
+| Document | Real measurement | Why REJECT is unreachable |
+|---|---|---|
+| `31_adversarial_selfie.png` | `quad=present, bandCount=2, stddev=11.9` | `evaluateDocumentLikeness` requires `!hasQuad` as one of three ANDed conditions — a detected quad blocks REJECT outright, regardless of the other two |
+| `32_adversarial_receipt.png` | `bandCount=14, inkFraction=0.028` (just above `INK_FRACTION_MIN=0.02`) | `noStructure` requires `bandCount < MIN_TEXT_BAND_COUNT(2)` — 14 is nowhere close |
+
+The proof this has no safe headroom: `35_illegible_dl_wy.png` — a genuine, valid licence
+that the ground truth explicitly requires must *never* be rejected, however badly it was
+captured — measures `quad=present, bandCount=2`, the identical signature to the selfie.
+Any threshold change that flips the selfie to REJECT flips this real document too. The
+receipt is the same story against every genuine ID card in the corpus, which are all
+`bandCount ≥ 6`: a receipt's row-structured text is not pixel-distinguishable from a real
+document's, by design (§8 A5's own note on why doc 32 exists). This is the asymmetry rule
+(§8 A2) working exactly as designed, confirmed with real numbers rather than re-asserted
+from the code comment: containment (7/7, both of these are `ADMIT_LIMITED` and permanently
+blocked from TC) is already 100%; pushing the *hard-reject* rate higher than 4/7 would
+require abandoning the "a quad or real text structure is never overridden" rule that is
+also the only thing protecting docs 22/23/35 from false rejection. Not changed.
+
+**Finding 2 — `25_not_a_document_meme.png` never even reaches the gate, and neither does
+any T0-level "unreadable bytes" rejection, yet all of them were routed identically.**
+
+Instrumenting the pipeline showed the meme is rejected at T0 (`normalizeDocument`,
+`RESOLUTION_TOO_LOW`) before the gate ever runs — correct in outcome, but `rejectionResponse()`
+in `router.ts` set `decision: 'REVIEW'` **unconditionally** for every T0 failure kind
+(`EMPTY_FILE`, `UNSUPPORTED_TYPE`, `CORRUPT_FILE`, `ENCRYPTED_PDF`, `RESOLUTION_TOO_LOW`,
+`RENDER_FAILED`), with no distinction between them, and — per the CRM rule in §9 ("every
+non-REJECTED verdict gets a payload") — emitted a CRM payload for all of them too. That is
+defensible for most of these kinds: a `CORRUPT_FILE` or a too-small photo could genuinely be
+a real customer's document with a technical problem (a truncated upload, a bad phone photo),
+so a human should still see it and CRM should still know about it. It is not defensible for
+`EMPTY_FILE` or `UNSUPPORTED_TYPE`: no real KYC document is ever a 0-byte upload or a file
+whose magic bytes match nothing this system reads (§7.1 — the declared name/mime is never
+trusted). Those two are impossibilities, not uncertainties, and were consuming the same
+review-queue slot and CRM noise as a genuinely ambiguous case.
+
+**Fix: extend the asymmetry rule one layer before the gate.** `router.ts` now splits T0
+rejections in two. `isTerminalT0Rejection()` (pure, exported, unit-tested directly —
+`router.test.ts`) is true only for `EMPTY_FILE`/`UNSUPPORTED_TYPE`; those now go through a
+new `terminalRejectionResponse()`, built the same way `gateRejectedResponse()` already is:
+`decision: 'REJECTED'`, no `admission` (T0 never reached the gate), and — following
+`gateRejectedResponse()`'s own precedent exactly — no `crm_payload`, logged only
+(`[crm] T0 terminal reject — no CRM payload emitted`). Confidence is `1`, not the gate's
+`0.9`: this is a deterministic fact about the bytes (length, magic-byte sniff), not a
+statistical pixel judgment, so borrowing the gate's own hedge would have been dishonest in
+the other direction. The remaining four kinds keep going through the original
+`rejectionResponse()`, unchanged: `REVIEW`, CRM payload emitted, a human sees it.
+
+**A second, real bug found while wiring this up, unrelated to the gate itself:**
+`src/app/api/eval-gate/route.ts` special-cased any T0 rejection with a hand-rolled
+`if (!isNormalized(outcome)) { if (adversarial) containedCount++; return; }` that never
+called `runPipeline` at all — meaning it could never have observed the new `REJECTED`
+decision, or any future change to T0 handling, without silently drifting from what the
+router actually returns (the exact class of bug §8's `GATE_KEYWORDS`-by-exclusion comment
+already warns about once in this codebase). Fixed by calling `runPipeline({ outcome, today })`
+unconditionally, exactly like `eval/run.ts`'s own harness already does — one source of truth
+for "what happens to a T0 rejection" instead of two that can diverge.
+
+**Verification.** None of the 35 corpus documents are an empty file or an unsupported type
+(all 35 are real images/PDFs, adversarial only in *content*, never in file validity), so this
+change was invisible to the corpus's own numbers by construction — confirmed live against
+the running `/api/eval-gate` route post-fix: `containedCount: 7, rejectedCount: 4,
+falseRejectCount: 0, spendAvoidedUsd: 0.88` — bit-for-bit identical to the committed
+`eval/results.md` figures. Coverage for the new behavior itself comes from `router.test.ts`:
+`isTerminalT0Rejection` pinned directly against all six T0 kinds, plus three end-to-end
+`runPipeline()` calls on real (non-mocked) fixtures — a zero-byte file and a plain-text
+upload both resolve `REJECTED` with `crm_payload` and `admission` both `undefined`; the
+existing `CORRUPT_FILE` fixture from `normalize.test.ts` still resolves `REVIEW` with a
+`crm_payload` present, guarding against the split ever silently swallowing a kind it
+shouldn't.
